@@ -162,12 +162,16 @@ class EnhancedConsole:
             table.add_row(*row)
         self.console.print(table)
 
-    def confusion_matrix_to_rich_table(self, confusion_matrix: np.ndarray, class_labels: Optional[List[str]] = None):
+    def confusion_matrix_to_rich_table(
+        self, confusion_matrix: np.ndarray, condition: str, class_labels: Optional[List[str]] = None
+    ):
         """Convert a confusion matrix to a Rich table"""
         if class_labels and len(class_labels) != confusion_matrix.shape[0]:
             raise ValueError("Number of class labels must match matrix dimensions")
 
-        table = Table(title="Confusion Matrix", box=box.SIMPLE, row_styles=["table_dim", "table_bright"])
+        table = Table(
+            title=f"Confusion Matrix - {condition.upper()}", box=box.SIMPLE, row_styles=["table_dim", "table_bright"]
+        )
 
         if class_labels is None:
             class_labels = [f"Class {i}" for i in range(confusion_matrix.shape[0])]
@@ -258,6 +262,7 @@ class EnhancedConsole:
 
         # Add condition-specific metric tables
         sorted_conditions = sorted(grouped_metrics.keys(), key=lambda x: (-len(x), x))
+        confusion_matrices = {}
         for condition in sorted_conditions:
             condition_metrics = grouped_metrics[condition]
             table = Table(title=f"Metrics - Condition: {condition}", show_header=True, header_style="bold white")
@@ -266,7 +271,8 @@ class EnhancedConsole:
 
             for key, value in condition_metrics.items():
                 if "ConfusionMatrix" in key:
-                    confusion_table = self.confusion_matrix_to_rich_table(value)
+                    confusion_table = self.confusion_matrix_to_rich_table(value, condition)
+                    confusion_matrices[condition] = confusion_table
                     continue
 
                 if isinstance(value, (np.generic, float)):
@@ -275,8 +281,9 @@ class EnhancedConsole:
 
             tables.append(table)
 
-        if confusion_table:
-            tables.append(confusion_table)
+        if len(confusion_matrices) > 0:
+            for condition, confusion_table in confusion_matrices.items():
+                tables.append(confusion_table)
 
         self.console.print(Columns(tables))
 

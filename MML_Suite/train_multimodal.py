@@ -2,13 +2,16 @@ import os
 import time
 from argparse import ArgumentParser
 from pathlib import Path
-from typing import Dict
+from typing import Any, Dict
 
 
 import warnings
 
 import numpy as np
 import torch
+from torch.nn import Module
+from torch.optim import Optimizer
+from torch.optim.lr_scheduler import LRScheduler
 from torch.utils.data import DataLoader
 from config import StandardMultimodalConfig
 from config.resolvers import resolve_model_name
@@ -27,6 +30,7 @@ from experiment_utils import (
     get_logger,
     EnhancedConsole,
     LoggerSingleton,
+    LossFunctionGroup,
 )
 from modalities import add_modality
 from rich import box
@@ -74,7 +78,9 @@ def setup_experiment(
     return config, console, logger
 
 
-def setup_dataloaders(config: StandardMultimodalConfig, console, logger) -> Dict[str, torch.utils.data.DataLoader]:
+def setup_dataloaders(
+    config: StandardMultimodalConfig, console: EnhancedConsole, logger: LoggerSingleton
+) -> Dict[str, DataLoader]:
     """Setup data loaders for training and evaluation."""
     logger.debug("Building dataloaders...")
 
@@ -93,16 +99,18 @@ def setup_dataloaders(config: StandardMultimodalConfig, console, logger) -> Dict
 
 
 def setup_model_components(
-    config: StandardMultimodalConfig, console, logger, dataloaders: DataLoader | Dict[str, DataLoader] = None
-):
+    config: StandardMultimodalConfig,
+    console: EnhancedConsole,
+    logger: LoggerSingleton,
+    dataloaders: DataLoader | Dict[str, DataLoader] = None,
+) -> tuple[Module, Optimizer, LossFunctionGroup, LRScheduler, torch.device, MetricRecorder]:
     """Setup model and training components."""
     logger.debug("Building model...")
 
     # Initialize model
-    model_cls = resolve_model_name(config.model.name)
+    model_cls: Module = resolve_model_name(config.model.name)
     model = model_cls(
         **config.model.kwargs,
-        metric_recorder=MetricRecorder(config=config.metrics),
     )
 
     if (
@@ -126,8 +134,8 @@ def setup_model_components(
 
     # Setup optimizer and criterion
     optimizer = config.get_optimizer(model)
-    criterion = config.get_criterion(
-        criterion_name=config.training.criterion,
+    criterion: LossFunctionGroup = config.get_criterion(
+        criterion_info=config.training.criterion,
         criterion_kwargs=config.training.criterion_kwargs,
     )
 
@@ -143,10 +151,24 @@ def setup_model_components(
     else:
         console.print("[bold yellow]![/] No scheduler")
 
-    return model, optimizer, criterion, scheduler, device
+    metric_recorder = MetricRecorder(
+        config.metrics, tensorboard_path=config.logging.tensorboard_path, tb_record_only=config.logging.tb_record_only
+    )
+
+    return model, optimizer, criterion, scheduler, device, metric_recorder
 
 
-def train_epoch(model, train_loader, optimizer, criterion, device, console, epoch_metrics, epoch, monitor=None):
+def train_epoch(
+    model: Module,
+    train_loader: DataLoader,
+    optimizer: Optimizer,
+    criterion: LossFunctionGroup,
+    device: torch.device,
+    console: EnhancedConsole,
+    epoch: int,
+    metric_recorder: MetricRecorder,
+    monitor: ExperimentMonitor = None,
+) -> tuple[float, float]:
     """Run one epoch of training."""
     model.train()
     start_time = time.time()
@@ -154,7 +176,9 @@ def train_epoch(model, train_loader, optimizer, criterion, device, console, epoc
     console.start_task("Training", total=len(train_loader), style="light slate_blue")
     losses = []
     for batch in train_loader:
-        train_loss = model.train_step(batch, criterion=criterion, optimizer=optimizer, device=device, epoch=epoch)
+        train_loss = model.train_step(
+            batch, criterion=criterion, optimizer=optimizer, device=device, epoch=epoch, metric_recorder=metric_recorder
+        )
         losses.append(train_loss)
         if monitor:
             monitor.step()
@@ -167,8 +191,15 @@ def train_epoch(model, train_loader, optimizer, criterion, device, console, epoc
 
 
 def validate_epoch(
-    model, val_loader, criterion, device, console, epoch_metrics, monitor=None, task_name: str = "Validation"
-):
+    model: Module,
+    val_loader: DataLoader,
+    criterion: LossFunctionGroup,
+    device: torch.device,
+    console: EnhancedConsole,
+    metric_recorder: MetricRecorder,
+    monitor: ExperimentMonitor = None,
+    task_name: str = "Validation",
+) -> tuple[float, float]:
     """Run one epoch of validation."""
     model.eval()
     start_time = time.time()
@@ -177,7 +208,9 @@ def validate_epoch(
     losses = []
     with torch.no_grad():
         for batch in val_loader:
-            validation_loss = model.validation_step(batch, criterion=criterion, device=device)
+            validation_loss = model.validation_step(
+                batch, criterion=criterion, device=device, metric_recorder=metric_recorder
+            )
             # epoch_metrics.update_from_dict(validation_results)
             losses.append(validation_loss)
             if monitor:
@@ -188,7 +221,14 @@ def validate_epoch(
     return np.mean([l["loss"] for l in losses]), (time.time() - start_time) / len(val_loader)
 
 
-def check_early_stopping(val_metrics, best_metrics, patience, min_delta, wait=0, mode="minimize"):
+def check_early_stopping(
+    val_metrics: Dict[str, Any],
+    best_metrics: Dict[str, Any],
+    patience: int,
+    min_delta: float,
+    wait: int = 0,
+    mode="minimize",
+) -> tuple[bool, int]:
     """Check early stopping conditions."""
     metric_value = val_metrics["loss"] if mode == "minimize" else val_metrics[mode]
     best_value = best_metrics["loss"] if mode == "minimize" else best_metrics[mode]
@@ -209,7 +249,9 @@ def check_early_stopping(val_metrics, best_metrics, patience, min_delta, wait=0,
     return True, wait
 
 
-def setup_tracking(config: StandardMultimodalConfig, output_dir: Path, model) -> tuple:
+def setup_tracking(
+    config: StandardMultimodalConfig, output_dir: Path, model: Module
+) -> tuple[CheckpointManager, dict[str, Any], ExperimentReportGenerator, ExperimentMonitor]:
     """Setup experiment tracking components."""
     checkpoint_manager = CheckpointManager(
         model_dir=config.logging.model_output_path,
@@ -263,7 +305,9 @@ def setup_managers():
     pass
 
 
-def main(config: StandardMultimodalConfig, console, logger):
+def main(
+    config: StandardMultimodalConfig, console: EnhancedConsole, logger: LoggerSingleton
+) -> tuple[Module, dict[str, Any], Path]:
     """Main training loop with tracking and reporting."""
     # Setup output directory
     output_dir = Path(config.logging.log_path)
@@ -274,7 +318,9 @@ def main(config: StandardMultimodalConfig, console, logger):
     clean_checkpoints(os.path.join(os.path.dirname(config.logging.model_output_path), str(config.experiment.run_id)))
     dataloaders = setup_dataloaders(config, console, logger)
 
-    model, optimizer, criterion, scheduler, device = setup_model_components(config, console, logger, dataloaders)
+    model, optimizer, criterion, scheduler, device, metric_recorder = setup_model_components(
+        config, console, logger, dataloaders
+    )
 
     # Setup tracking components
     checkpoint_manager, experiment_data, report_generator, monitor = setup_tracking(config, output_dir, model)
@@ -288,33 +334,34 @@ def main(config: StandardMultimodalConfig, console, logger):
 
     try:
         # Training loop
-        if config.experiment.do_train:
+        if config.experiment.is_train:
             console.start_task("Epoch", total=config.training.epochs)
 
             for epoch in range(1, config.training.epochs + 1):
                 # Reset metrics
-                model.metric_recorder.reset()
-                epoch_metrics = model.metric_recorder
+                metric_recorder.reset()
+                epoch_metrics = metric_recorder
 
                 if monitor:
                     monitor.start_epoch(epoch)
 
                 # Training phase
                 train_loss, train_time = train_epoch(
-                    model,
-                    dataloaders["train"],
-                    optimizer,
-                    criterion,
-                    device,
-                    console,
-                    epoch_metrics,
+                    model=model,
+                    train_loader=dataloaders["train"],
+                    optimizer=optimizer,
+                    criterion=criterion,
+                    device=device,
+                    console=console,
+                    metric_recorder=epoch_metrics,
                     epoch=epoch,
                     monitor=monitor,
                 )
 
                 # Record training data
                 console.print("Calculating training metrics")
-                train_metrics = epoch_metrics.calculate_metrics()
+
+                train_metrics = epoch_metrics.calculate_metrics(metric_group="Train", epoch=epoch, loss=train_loss)
                 train_metrics["loss"] = train_loss
                 experiment_data["metrics_history"]["train"].append(train_metrics.copy())
                 experiment_data["timing_history"]["train"].append(train_time)
@@ -325,16 +372,17 @@ def main(config: StandardMultimodalConfig, console, logger):
                     console.display_validation_metrics(train_metrics)
 
                 # Validation phase
-                model.metric_recorder.reset()
-                epoch_metrics = model.metric_recorder
+                metric_recorder.reset()
+                epoch_metrics = metric_recorder
 
                 val_loss, val_time = validate_epoch(
-                    model,
-                    dataloaders["validation"],
-                    criterion,
-                    device,
-                    console,
-                    epoch_metrics,
+                    model=model,
+                    val_loader=dataloaders["validation"],
+                    criterion=criterion,
+                    device=device,
+                    console=console,
+                    metric_recorder=epoch_metrics,
+                    monitor=monitor,
                 )
 
                 if monitor:
@@ -342,7 +390,7 @@ def main(config: StandardMultimodalConfig, console, logger):
 
                 # Record validation data
                 console.print("Calculating validation metrics")
-                val_metrics = epoch_metrics.calculate_metrics()
+                val_metrics = epoch_metrics.calculate_metrics(metric_group="Validation", epoch=epoch, loss=val_loss)
                 val_metrics["loss"] = val_loss
                 experiment_data["metrics_history"]["validation"].append(val_metrics.copy())
                 experiment_data["timing_history"]["validation"].append(val_time)
@@ -395,16 +443,16 @@ def main(config: StandardMultimodalConfig, console, logger):
                     f"Training stopped early at epoch {epoch}. " f"Best epoch was {checkpoint_manager.best_epoch}"
                 )
         # Testing phase
-        if config.experiment.do_test:
+        if config.experiment.is_test:
             # Load best model for testing
             checkpoint_manager.load_checkpoint(model=model, load_best=True)
 
-            for _test_dataloader in [d for d in dataloaders if d not in ["train", "validation"]]:
+            for _test_dataloader in [d for d in dataloaders if d not in ["train", "validation", "embeddings"]]:
                 experiment_data["best_epoch"] = checkpoint_manager.best_epoch
                 experiment_data["timing_history"][_test_dataloader] = []
 
-                model.metric_recorder.reset()
-                test_metrics = model.metric_recorder
+                metric_recorder.reset()
+                test_metrics = metric_recorder
 
                 if monitor:
                     monitor.start_epoch(_test_dataloader)
@@ -417,11 +465,13 @@ def main(config: StandardMultimodalConfig, console, logger):
                         criterion=criterion,
                         device=device,
                         console=console,
-                        epoch_metrics=test_metrics,
+                        metric_recorder=test_metrics,
                         task_name=f"Testing {_test_dataloader}",
                     )
 
-                final_test_metrics = test_metrics.calculate_metrics()
+                final_test_metrics = test_metrics.calculate_metrics(
+                    metric_group="Test", epoch=checkpoint_manager.best_epoch
+                )
                 final_test_metrics["loss"] = test_loss
                 experiment_data["metrics_history"][_test_dataloader] = final_test_metrics
                 experiment_data["timing_history"][_test_dataloader].append(test_time)
@@ -430,24 +480,25 @@ def main(config: StandardMultimodalConfig, console, logger):
 
                 if monitor:
                     monitor.end_epoch()
-
-                # Collect final embeddings if available
-                if hasattr(model, "get_embeddings"):
-                    test_embeddings = model.get_embeddings(dataloaders[_test_dataloader], device=device)
-
-                    for modality, embeddings in test_embeddings.items():
-                        if experiment_data["embeddings"] is None:
-                            experiment_data["embeddings"] = {}
-                        embeddings = np.concat(embeddings)
-                        np.save(
-                            f"{os.path.join(config.logging.metrics_path, 'embeddings', str(modality) +'.npy')}",
-                            embeddings,
-                        )
-                        experiment_data["embeddings"][modality] = embeddings
     finally:
         if monitor:
             monitor.close()
             model.detach_monitor()
+    has_embeddings_dataset = "embeddings" in dataloaders
+    if has_embeddings_dataset:
+        if hasattr(model, "get_embeddings"):
+            test_embeddings = model.get_embeddings(dataloaders["embeddings"], device=device)
+
+            for modality, embeddings in test_embeddings.items():
+                if experiment_data["embeddings"] is None:
+                    experiment_data["embeddings"] = {}
+                embeddings = np.concat(embeddings)
+                np.save(
+                    f"{os.path.join(config.logging.metrics_path, 'embeddings', str(modality) +'.npy')}",
+                    embeddings,
+                )
+                experiment_data["embeddings"][modality] = embeddings
+
     # Add model information
     experiment_data["model_info"] = {
         "parameters": sum(p.numel() for p in model.parameters()),
@@ -470,8 +521,8 @@ if __name__ == "__main__":
 
     optional_args = parser.add_argument_group("Optional arguments")
     optional_args.add_argument("--dry-run", action="store_true", help="Run a dry run of the experiment.")
-    optional_args.add_argument("--do-train", action="store_false", default=True, help="Skip training phase.")
-    optional_args.add_argument("--do-test", action="store_false", default=True, help="Skip testing phase.")
+    optional_args.add_argument("--skip-train", action="store_true", default=None, help="Skip training phase.")
+    optional_args.add_argument("--skip-test", action="store_true", default=None, help="Skip testing phase.")
 
     optional_args.add_argument(
         "--disable_monitoring", action="store_false", help="Enable monitoring of model weights and gradients."
@@ -483,8 +534,8 @@ if __name__ == "__main__":
     config, console, logger = setup_experiment(args.config, args.run_id)
 
     config.experiment.dry_run = args.dry_run
-    config.experiment.do_train = args.do_train
-    config.experiment.do_test = args.do_test
+    config.experiment.is_train = args.skip_train if args.skip_train is not None else config.experiment.is_train
+    config.experiment.is_test = not args.skip_test if args.skip_test is not None else config.experiment.is_test
 
     if not args.disable_monitoring:
         config.monitoring.enabled = False

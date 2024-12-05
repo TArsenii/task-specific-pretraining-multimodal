@@ -6,6 +6,11 @@ from typing import List
 class MultimodalBaseDataset(Dataset):
     """Base class for multimodal datasets with missing modality support."""
 
+    @staticmethod
+    def get_full_modality() -> str:
+        """Return the name of the full modality."""
+        raise NotImplementedError("Method get_full_modality must be implemented in the derived class.")
+
     @classmethod
     def get_all_possible_patterns(cls) -> List[str]:
         """Generate all possible modality combinations excluding empty set."""
@@ -24,3 +29,8 @@ class MultimodalBaseDataset(Dataset):
         if invalid_patterns:
             raise ValueError(f"Invalid patterns: {invalid_patterns}\n" f"Valid patterns are: {all_patterns}")
         return patterns
+
+    def set_selected_pattern(self, pattern: str) -> None:
+        assert hasattr(self, "selected_pattern"), "Dataset must have attribute selected_pattern"
+        assert pattern in self.get_all_possible_patterns(), "Invalid pattern"
+        self.selected_pattern = pattern

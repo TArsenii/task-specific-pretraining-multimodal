@@ -1,4 +1,4 @@
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Literal, Optional
 
 import torch
 import torch.nn as nn
@@ -39,7 +39,7 @@ class CMAMLoss(nn.Module):
         mmd_sigma: float = 1.0,
         maximize_cosine: bool = True,
         epsilon: float = 1e-8,
-        cls_loss_type: str = "ce",
+        cls_loss_type: Literal["ce", "bce", "mse"] = "ce",
         num_classes: Optional[int] = None,
     ):
         """

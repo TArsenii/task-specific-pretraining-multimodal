@@ -1,11 +1,15 @@
 # self supervised multimodal multi-task learning network
 
+from collections import defaultdict
 from typing import Any, Dict
 
 import numpy as np
 import torch
 import torch.nn.functional as F
 
+from data import MOSI
+from experiment_utils.logging import LoggerSingleton
+from experiment_utils.printing import EnhancedConsole
 from experiment_utils import CenterManager, FeatureManager, LabelManager, get_console, get_logger, safe_detach
 from modalities import Modality
 from models.mixins import MultiModalMonitoringMixin
@@ -15,8 +19,9 @@ from torch.nn import LSTM, Dropout, Linear, Module
 from torch.nn.utils.rnn import pack_padded_sequence
 from torch.optim import Optimizer
 
-console = get_console()
-logger = get_logger()
+DEFAULT_TEXT_LENGTH: int = 50
+console: EnhancedConsole = get_console()
+logger: LoggerSingleton = get_logger()
 
 
 class Self_MM(Module, MultiModalMonitoringMixin):
@@ -139,6 +144,8 @@ class Self_MM(Module, MultiModalMonitoringMixin):
         else:
             mask_len = torch.sum(text[:, 1, :], dim=1, keepdim=True)
             text_lengths = safe_detach(mask_len.squeeze().int(), to_np=False)
+            # change any 0 length to some set length
+            text_lengths[text_lengths == 0] = DEFAULT_TEXT_LENGTH
 
         text = self.text_model(text)[:, 0, :] if not is_embd_T else text
 
@@ -157,6 +164,7 @@ class Self_MM(Module, MultiModalMonitoringMixin):
         text_h = self.post_text_dropout(text)
         text_h = F.relu(self.post_text_layer_1(text_h), inplace=False)
         # audio
+
         audio_h = self.post_audio_dropout(audio)
         audio_h = F.relu(self.post_audio_layer_1(audio_h), inplace=False)
         # vision
@@ -167,7 +175,6 @@ class Self_MM(Module, MultiModalMonitoringMixin):
         x_f = F.relu(self.post_fusion_layer_2(fusion_h), inplace=False)
         output_fusion = self.post_fusion_layer_3(x_f)
 
-        # classifier-text
         x_t = F.relu(self.post_text_layer_2(text_h), inplace=False)
         output_text = self.post_text_layer_3(x_t)
 
@@ -191,6 +198,11 @@ class Self_MM(Module, MultiModalMonitoringMixin):
                 Modality.AUDIO: audio_h,
                 Modality.VIDEO: video_h,
                 Modality.TEXT: text_h,
+            },
+            "features_pre_activation": {
+                Modality.AUDIO: audio,
+                Modality.VIDEO: video,
+                Modality.TEXT: text,
             },
         }
 
@@ -295,7 +307,7 @@ class Self_MM(Module, MultiModalMonitoringMixin):
         if self.need_data_aligned:
             A_lengths, V_lengths = batch["audio_length"].to(device), batch["video_length"].to(device)
         else:
-            A_lengths, V_lengths = batch["length"].to(device), batch["length"].to(device)
+            A_lengths, V_lengths = 0, 0
 
         outputs = self.forward(
             (A, A_lengths),
@@ -328,6 +340,60 @@ class Self_MM(Module, MultiModalMonitoringMixin):
             }
 
         return {"loss": loss.item()}
+
+    def get_embeddings(self, dataloader: DataLoader, device: torch.device):
+        console = get_console()
+        console.print("Getting embeddings...")
+        console.start_task("Embeddings", len(dataloader))
+        embeddings = defaultdict(list)
+        self.to(device)
+        self.eval()
+
+        for batch in dataloader:
+            with torch.no_grad():
+                A, V, T, labels, miss_types = (
+                    batch[Modality.AUDIO],
+                    batch[Modality.VIDEO],
+                    batch[Modality.TEXT],
+                    batch["label"],
+                    batch["pattern_name"],
+                )
+                miss_types = np.array(miss_types)
+
+                A = A[miss_types == MOSI.get_full_modality()].to(device)
+                V = V[miss_types == MOSI.get_full_modality()].to(device)
+                T = T[miss_types == MOSI.get_full_modality()].to(device)
+
+                labels = labels.to(device)
+
+                if self.need_data_aligned:
+                    A_lengths, V_lengths = batch["audio_length"].to(device), batch["video_length"].to(device)
+                else:
+                    A_lengths, V_lengths = 0, 0
+
+                outputs = self.forward(
+                    (A, A_lengths),
+                    (V, V_lengths),
+                    T,
+                )
+
+                audio_features, video_features, text_features = (
+                    outputs["features_pre_activation"][Modality.AUDIO],
+                    outputs["features_pre_activation"][Modality.VIDEO],
+                    outputs["features_pre_activation"][Modality.TEXT],
+                )
+
+                embeddings[Modality.AUDIO].append(safe_detach(audio_features, to_np=True))
+                embeddings[Modality.VIDEO].append(safe_detach(video_features, to_np=True))
+                embeddings[Modality.TEXT].append(safe_detach(text_features, to_np=True))
+
+            console.update_task("Embeddings", advance=1)
+
+        console.complete_task("Embeddings")
+        console.print(
+            f"Gathered {len(embeddings[Modality.AUDIO])} audio embeddings, {len(embeddings[Modality.VIDEO])} video embeddings and {len(embeddings[Modality.TEXT])} text embeddings"
+        )
+        return embeddings
 
     def weighted_loss(self, y_pred, y_true, indexes=None, modality: Modality = Modality.MULTIMODAL):
         y_pred = y_pred.view(-1)

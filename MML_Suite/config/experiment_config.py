@@ -24,8 +24,8 @@ class ExperimentConfig(BaseConfig):
     device: str = "cuda"
     debug: bool = False
     run_id: int = field(default_factory=lambda: int(time.time()))
-    do_test: bool = True
-    do_train: bool = True
+    is_test: bool = True
+    is_train: bool = True
     train_print_interval_epochs: int = 1
     validation_print_interval_epochs: int = 1
     dry_run: bool = False
@@ -99,8 +99,8 @@ class ExperimentConfig(BaseConfig):
         console.print(f"  Seed: {self.seed}")
         console.print(f"  Device: {self.device}")
         console.print(f"  Debug Mode: {'Enabled' if self.debug else 'Disabled'}")
-        console.print(f"  Test Mode: {'Enabled' if self.do_test else 'Disabled'}")
-        console.print(f"  Train Mode: {'Enabled' if self.do_train else 'Disabled'}")
+        console.print(f"  Test Mode: {'Enabled' if self.is_test else 'Disabled'}")
+        console.print(f"  Train Mode: {'Enabled' if self.is_train else 'Disabled'}")
         console.print(f"  Train Print Interval: {self.train_print_interval_epochs} epochs")
         console.print(f"  Validation Print Interval: {self.validation_print_interval_epochs} epochs")
 
@@ -115,8 +115,8 @@ class ExperimentConfig(BaseConfig):
             "device": str(self.device),
             "debug": self.debug,
             "run_id": self.run_id,
-            "do_test": self.do_test,
-            "do_train": self.do_train,
+            "is_test": self.is_test,
+            "is_train": self.is_train,
             "train_print_interval_epochs": self.train_print_interval_epochs,
             "validation_print_interval_epochs": self.validation_print_interval_epochs,
         }

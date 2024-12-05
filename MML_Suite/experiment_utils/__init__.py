@@ -16,6 +16,8 @@ from .experiment_report import (
     TimingReport,
 )
 
+from .loss import LossFunctionGroup
+
 
 from .monitoring import ExperimentMonitor
 from .themes import (
@@ -69,6 +71,9 @@ __all__ = [
     "FeatureManager",
     "LabelManager",
     "CenterManager",
-    "safe_detach", "EnhancedConsole", "LoggerSingleton", "to_gpu_safe"
-    
+    "safe_detach",
+    "EnhancedConsole",
+    "LoggerSingleton",
+    "to_gpu_safe",
+    "LossFunctionGroup",
 ]

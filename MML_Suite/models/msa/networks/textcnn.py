@@ -1,6 +1,9 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from experiment_utils.printing import get_console
+
+console = get_console()
 
 
 class TextCNN(nn.Module):
@@ -10,9 +13,9 @@ class TextCNN(nn.Module):
         embd_size=128,
         in_channels=1,
         out_channels=128,
-        kernel_heights=[3, 4, 5],
+        kernel_heights: list[int] = [3, 4, 5],
         dropout=0.5,
-    ):  # 3,4,5
+    ) -> None:  # 3,4,5
         super().__init__()
         """
         cat((conv1-relu+conv2-relu+conv3-relu)+maxpool) + dropout, and to trans
@@ -46,12 +49,8 @@ class TextCNN(nn.Module):
         self.hidden_size = embd_size
 
     def conv_block(self, input, conv_layer):
-        conv_out = conv_layer(
-            input
-        )  # conv_out.size() = (batch_size, out_channels, dim, 1)
-        activation = F.relu(
-            conv_out.squeeze(3)
-        )  # activation.size() = (batch_size, out_channels, dim1)
+        conv_out = conv_layer(input)  # conv_out.size() = (batch_size, out_channels, dim, 1)
+        activation = F.relu(conv_out.squeeze(3))  # activation.size() = (batch_size, out_channels, dim1)
         max_out = F.max_pool1d(activation, activation.size()[2]).squeeze(
             2
         )  # maxpool_out.size() = (batch_size, out_channels)

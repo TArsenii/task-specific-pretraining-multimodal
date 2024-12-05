@@ -2,6 +2,8 @@ from __future__ import annotations
 import importlib
 from collections import OrderedDict, defaultdict
 from functools import partial
+from os import PathLike
+import re
 from typing import Any, Callable, Dict, List, Optional, Union, Tuple, DefaultDict
 
 import numpy as np
@@ -59,7 +61,12 @@ class MetricRecorder:
         current_results (Dict[str, float]): Most recently calculated metric results
     """
 
-    def __init__(self, config: MetricConfig) -> None:
+    def __init__(
+        self,
+        config: MetricConfig,
+        tensorboard_path: Optional[PathLike] = None,
+        tb_record_only: Optional[List[str]] = None,
+    ) -> None:
         """
         Initialize the MetricRecorder.
 
@@ -71,6 +78,19 @@ class MetricRecorder:
         self.metrics: OrderedDict[str, Callable] = self._load_metrics()
         self.modality_data: DefaultDict[Any, List[Tuple[ndarray, ndarray]]] = defaultdict(list)
         self.current_results: Dict[str, float] = {}
+        self.tensorboard_path = tensorboard_path
+
+        if self.tensorboard_path:
+            try:
+                from torch.utils.tensorboard import SummaryWriter
+
+                self.writer = SummaryWriter(log_dir=self.tensorboard_path)
+                logger.info(f"Logging metrics to TensorBoard at {self.tensorboard_path}")
+                self.tb_record_only = tb_record_only
+                logger.info(f"Only logging metrics: {self.tb_record_only}")
+            except ImportError:
+                console.print("[bold red]Error[/]: TensorBoardX not installed. Cannot log to TensorBoard.")
+                self.writer = None
 
     def _validate_config(self, config: MetricConfig) -> None:
         """
@@ -111,7 +131,7 @@ class MetricRecorder:
         return metrics
 
     def update(
-        self, predictions: Union[Tensor, ndarray], targets: Union[Tensor, ndarray], modality: Optional[Any] = None
+        self, predictions: Union[Tensor, ndarray], targets: Union[Tensor, ndarray], modality: str
     ) -> None:
         """
         Store predictions and targets for later metric calculation.
@@ -132,7 +152,9 @@ class MetricRecorder:
 
         self.modality_data[modality].append((predictions, targets))
 
-    def calculate_metrics(self) -> Dict[str, float]:
+    def calculate_metrics(
+        self, metric_group: Optional[str] = None, epoch: Optional[int] = None, loss: Optional[float] = None
+    ) -> Dict[str, float]:
         """
         Calculate all metrics using stored predictions and targets.
 
@@ -142,7 +164,7 @@ class MetricRecorder:
         Note:
             Metric names are formatted as {metric_name}_{modality} for modality-specific metrics
         """
-        results = {}
+        results = {"loss": loss} if loss is not None else {}
 
         for modality, data in self.modality_data.items():
             if not data:
@@ -171,7 +193,24 @@ class MetricRecorder:
                     console.print(f"[red]Error calculating metric {metric_name}: {str(e)}")
                     logger.error(f"Metric calculation error - {metric_name}: {str(e)}")
 
+        if self.writer:
+            logger.debug(f"Writer is not None {self.tensorboard_path}")
+            for metric_name, value in results.items():
+                ## want to match the metric name with the tb_record_only list using regex
+                if self.tb_record_only:
+                    for pattern in self.tb_record_only:
+                        if re.match(pattern, metric_name):
+                            self.writer.add_scalar(f"{metric_group}_{metric_name}", value, epoch or 0)
+                            logger.info(f"Logged metric '{metric_name}' with value {value} to TensorBoard")
+                        else:
+                            logger.info(
+                                f"Skipping metric '{metric_name}' with value {value} from logging to TensorBoard"
+                            )
+                else:
+                    self.writer.add_scalar(f"{metric_group}_{metric_name}", value, epoch or 0)
+                    logger.debug(f"Logged metric '{metric_name}' with value {value} to TensorBoard")
         self.current_results = results
+
         return results
 
     def get(self, metric_name: str, default: Any = None) -> Any:

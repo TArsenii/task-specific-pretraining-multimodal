@@ -1,11 +1,13 @@
-!StandardConfig
+!CMAMConfig
 experiment: !ExperimentConfig
-  name: "AVMNIST Multimodal Training"
+  name: "AVMNIST C-MAM Audio to Image"
   device: "cuda"
   train_print_interval_epochs: 1
   validation_print_interval_epochs: 1
   is_train: true
   is_test: true
+
+target_modality: !Modality image
 
 model: !ModelConfig
   name: "AVMNIST"
@@ -37,6 +39,26 @@ model: !ModelConfig
   hidden_dim: 128
   dropout: 0.5
   fusion_fn: "concat"
+
+cmam: !ModelConfig
+  name: "CMAM"
+  model_type: "CMAM"
+  input_encoders: !InputEncoders
+    !Modality audio: !MNISTAudio
+      conv_block_one_args: !ConvBlock
+        conv_one_in: 1
+        conv_one_out: 32
+      conv_block_two_args: !ConvBlock
+        conv_one_in: 32
+        conv_one_out: 32
+      conv_batch_norm: True
+      hidden_dim: 64
+  association_net: !AssociationNetworkConfig
+    input_dim: 64
+    hidden_dim: 128
+    output_dim: 128
+    dropout: 0.4
+    batch_norm: True
 
 
 training:
@@ -89,7 +111,7 @@ data: !DataConfig
             missing_rate: 0.0
           image: !ModalityConfig
             missing_rate: 0.0
-        selected_patterns: ["ai", "a", "i"]
+        selected_patterns: ["a"]
         force_binary: false
     test: !DatasetConfig
       dataset: "AVMNIST"
@@ -104,8 +126,9 @@ data: !DataConfig
             missing_rate: 0.0
           image: !ModalityConfig
             missing_rate: 0.0
-        selected_patterns: ["ai", "a", "i"]
+        selected_patterns: ["a"]
         force_binary: false
+
 metrics:
   metrics:
     accuracy:

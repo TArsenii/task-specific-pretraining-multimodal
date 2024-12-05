@@ -68,7 +68,6 @@ class MissingPatternConfig:
 
             patterns[pattern_name] = probs
 
-
         # Filter patterns if selected_patterns is specified
         if self.selected_patterns:
             patterns = {k: v for k, v in patterns.items() if k in self.selected_patterns}
@@ -126,7 +125,7 @@ class DatasetConfig(BaseConfig):
         # Add any additional kwargs
         args.update(self.kwargs)
 
-        logger.debug(f"Dataset arguments: {args}")
+        logger.info(f"Dataset arguments: {args}")
         return args
 
     def __str__(self) -> str:

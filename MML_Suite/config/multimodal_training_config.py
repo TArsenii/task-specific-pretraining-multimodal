@@ -17,6 +17,8 @@ from config.resolvers import (
     resolve_criterion,
     resolve_scheduler,
 )
+from experiment_utils import format_path_with_env
+from experiment_utils.loss import LossFunctionGroup
 from config.optimizer_config import OptimizerConfig, ParameterGroupsOptimizer
 from experiment_utils import get_console, get_logger
 from rich.panel import Panel
@@ -35,8 +37,9 @@ class TrainingConfig(BaseConfig):
     optimizer: OptimizerConfig
     scheduler: Optional[str] = None
     scheduler_args: Dict[str, Any] = field(default_factory=dict)
-    criterion: str = "cross_entropy"
-    criterion_kwargs: Dict[str, Any] = field(default_factory=dict)
+
+    criterion: str | Dict[str, Dict[str, Any]] = "cross_entropy"
+    criterion_kwargs: Dict[str, Any] | None = None  ## Only valid when criterion is a string
     validation_interval: int = 1
     missing_rates: Optional[List[float]] = None
     do_validation_visualization: bool = False
@@ -176,25 +179,32 @@ class BaseExperimentConfig(ABC):
 
     def get_criterion(
         self,
-        criterion_name: Optional[str] = None,
+        criterion_info: Optional[Union[str, Dict[str, Dict[str, Any]]]],
         criterion_kwargs: Optional[Dict[str, Any]] = None,
-    ) -> Any:
+    ) -> LossFunctionGroup:
         """Create criterion instance."""
-        try:
-            criterion_name = criterion_name or self.training.criterion
-            criterion_kwargs = criterion_kwargs or self.training.criterion_kwargs
+
+        if isinstance(criterion_info, dict):
+            loss_function_group_data = {}
+            weights = []
+            for key, value in criterion_info.items():
+                weight: float = value.pop(
+                    "weight", 1.0
+                )  # Default weight is 1.0 and removes it from the dictionary if it exists so it doesn't interfere with the criterion kwargs
+                weights.append(weight)
+                loss_function_group_data[key] = resolve_criterion(key)(**value)
+
+            return LossFunctionGroup(weights=weights, **loss_function_group_data)
+        else:
+            criterion_name = self.training.criterion
+            criterion_kwargs = self.training.criterion_kwargs or {}
             if criterion_name == "na":
                 return None
             criterion_cls = resolve_criterion(criterion_name)
             criterion = criterion_cls(**criterion_kwargs)
 
             logger.info(f"Created criterion: {criterion.__class__.__name__}")
-            return criterion
-
-        except Exception as e:
-            error_msg = f"Error creating criterion: {str(e)}"
-            logger.error(f"{error_msg}\n{traceback.format_exc()}")
-            raise
+            return LossFunctionGroup(criterion_name=criterion)
 
 
 @dataclass
@@ -204,6 +214,7 @@ class StandardMultimodalConfig(BaseExperimentConfig):
     def setup(self) -> None:
         """Setup standard configuration."""
         self._validate_components()
+
         # self._display_summary()
 
     def _validate_components(self) -> None:
@@ -272,14 +283,18 @@ class StandardMultimodalConfig(BaseExperimentConfig):
             experiment_config["run_id"] = run_id
             data_config = data["data"]
 
-            model_config = data["model"]
+            model_config: ModelConfig = data["model"]
 
-            logging_config = LoggingConfig.from_dict(
+            logging_config: LoggingConfig = LoggingConfig.from_dict(
                 data["logging"],
                 experiment_name=experiment_config["name"],
                 run_id=run_id,
             )
-
+            model_config.pretrained_path = logging_config.format_path(
+                format_path_with_env(model_config.pretrained_path)
+            )
+            console.print(f"Pretrained Path: {model_config.pretrained_path}")
+            model_config.validate_config()
             training_config = TrainingConfig.from_dict(data["training"])
 
             metrics_config = MetricConfig.from_dict(data["metrics"])

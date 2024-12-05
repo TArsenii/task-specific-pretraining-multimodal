@@ -9,6 +9,7 @@ from .multimodal_training_config import StandardMultimodalConfig
 from .resolvers import resolve_criterion, resolve_optimizer, resolve_scheduler, resolve_dataset_name
 from .manager_configs import FeatureManagerConfig, CenterManagerConfig, LabelManagerConfig
 from .optimizer_config import ParameterGroupConfig, OptimizerConfig, ParameterGroupsOptimizer
+from .cmam_config import AssociationNetworkConfig, CMAMConfig
 
 __all__ = [
     "BaseConfig",

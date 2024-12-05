@@ -14,16 +14,31 @@ __all__ = [
     "Self_MM",
     "UttFusionModel",
     "msa_binarize",
-    "AuViSubNet"
-    "BertTextEncoder"
+    "AuViSubNet",
+    "BertTextEncoder",
+    "InputEncoders",
+    "CMAM",
+    "DualCMAM",
+    "FcClassifier",
+    "ResidualAE",
 ]
 from torch.nn import BatchNorm2d, Conv2d, Linear, init
 
-from .msa import Self_MM, UttFusionModel, msa_binarize, AuViSubNet
+from .msa import (
+    Self_MM,
+    UttFusionModel,
+    msa_binarize,
+    AuViSubNet,
+    TextCNN,
+    LSTMEncoder,
+    FcClassifier,
+    ResidualAE,
+    BertTextEncoder,
+)
 from .avmnist import AVMNIST, MNISTAudio, MNISTImage
-from .cmams import BasicCMAM, DualCMAM
+from .cmams import InputEncoders, CMAM, DualCMAM
 from .conv import ConvBlock, ConvBlockArgs
-from .msa.networks import LSTMEncoder, TextCNN, BertTextEncoder
+
 from .protocols import MultimodalModelProtocol
 
 

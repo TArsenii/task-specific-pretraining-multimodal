@@ -6,12 +6,13 @@ from typing import Any, Dict, List, Optional, Union
 import torch
 from .base_dataset import MultimodalBaseDataset
 from collections import OrderedDict
-from experiment_utils import get_logger
+from experiment_utils import get_logger, get_console
 from modalities import Modality, add_modality
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader, Dataset
 
 logger = get_logger()
+console = get_console()
 
 add_modality("video")
 
@@ -27,6 +28,12 @@ class MultimodalSentimentDataset(MultimodalBaseDataset):
         ]
     )
 
+    @staticmethod
+    def get_full_modality() -> str:
+        m = [k[0] for k in MultimodalSentimentDataset.AVAILABLE_MODALITIES.keys()]
+        m.sort()
+        return "".join(m)
+
     def __init__(
         self,
         data_fp: Union[str, Path],
@@ -37,6 +44,7 @@ class MultimodalSentimentDataset(MultimodalBaseDataset):
         selected_patterns: Optional[List[str]] = None,
         labels_key: str = "regression_labels",
         aligned: bool = False,
+        length: Optional[int] = None,
         **kwargs,
     ):
         """
@@ -54,6 +62,9 @@ class MultimodalSentimentDataset(MultimodalBaseDataset):
         self.split = split
         self.aligned = aligned
 
+        if self.aligned:
+            self.length = length
+        self.labels_key = labels_key
         # Process target modality
         if isinstance(target_modality, str):
             target_modality = Modality.from_str(target_modality)
@@ -109,14 +120,17 @@ class MultimodalSentimentDataset(MultimodalBaseDataset):
         core_data = {
             "audio": torch.tensor(split_data["audio"]).float(),
             "video": torch.tensor(split_data["vision"]).float(),
-            "text": torch.tensor(split_data["text_bert"]).float(),
-            "label": torch.tensor(split_data[labels_key], dtype=torch.float32),
+            "text": torch.tensor(split_data["text"]).float(),
+            "label": torch.tensor(
+                split_data[labels_key], dtype=torch.float32 if "regression" in self.labels_key else torch.long
+            ),
         }
 
         return (
-            core_data | {"lengths": torch.tensor(split_data["lengths"]).float()}
+            core_data
             if self.aligned
-            else core_data | {
+            else core_data
+            | {
                 "audio_lengths": torch.tensor(split_data["audio_lengths"]).float(),
                 "video_lengths": torch.tensor(split_data["vision_lengths"]).float(),
             }
@@ -151,13 +165,9 @@ class MultimodalSentimentDataset(MultimodalBaseDataset):
             "sample_idx": sample_idx,
         }
 
-        if self.aligned:
-            sample["length"] = self.data["lengths"][sample_idx]
-        else:
-            sample["audio_length"] = self.data["audio_lengths"][sample_idx]            
+        if not self.aligned:
+            sample["audio_length"] = self.data["audio_lengths"][sample_idx]
             sample["video_length"] = self.data["video_lengths"][sample_idx]
-
-        
 
         # Apply masking to each modality
         for mod_name, mod_enum in self.AVAILABLE_MODALITIES.items():
@@ -172,30 +182,42 @@ class MultimodalSentimentDataset(MultimodalBaseDataset):
             else:
                 mask = 0.0
 
-            sample[str(mod_enum)+ "_original"] = data
-            sample[str(mod_enum)] = data * mask
+            sample[str(mod_enum) + "_original"] = data
+            sample[mod_enum] = data * mask
             sample[str(mod_enum) + "_reverse"] = data * -1 * (mask - 1)
 
             sample["missing_mask"][mod_enum] = mask
 
+        # shape_info = {
+        #     mod_name: sample[mod_enum].shape
+        #     for mod_name, mod_enum in self.AVAILABLE_MODALITIES.items()
+        #     if mod_enum in sample
+        # }
+
+        # console.print(f"Shapes: {shape_info}")
+
         # Handle target modality selection
         if self.target_modality != Modality.MULTIMODAL:
-            return {
-                self.target_modality: sample[self.target_modality],
-                "label": sample["label"],
-                "length": sample["length"],
-                "pattern_name": sample["pattern_name"],
-                "missing_mask": {self.target_modality: sample["missing_mask"][self.target_modality]},
-                "sample_idx": sample["sample_idx"],
-            }  if self.aligned else {
-                self.target_modality: sample[self.target_modality],
-                "label": sample["label"],
-                "audio_length": sample["audio_length"],
-                "video_length": sample["video_length"],
-                "pattern_name": sample["pattern_name"],
-                "missing_mask": {self.target_modality: sample["missing_mask"][self.target_modality]},
-                "sample_idx": sample["sample_idx"],
-            }
+            return (
+                {
+                    self.target_modality: sample[self.target_modality],
+                    "label": sample["label"],
+                    "length": sample["length"],
+                    "pattern_name": sample["pattern_name"],
+                    "missing_mask": {self.target_modality: sample["missing_mask"][self.target_modality]},
+                    "sample_idx": sample["sample_idx"],
+                }
+                if self.aligned
+                else {
+                    self.target_modality: sample[self.target_modality],
+                    "label": sample["label"],
+                    "audio_length": sample["audio_length"],
+                    "video_length": sample["video_length"],
+                    "pattern_name": sample["pattern_name"],
+                    "missing_mask": {self.target_modality: sample["missing_mask"][self.target_modality]},
+                    "sample_idx": sample["sample_idx"],
+                }
+            )
         return sample
 
     def collate_fn(self, batch: List[Dict[str, Any]]) -> Dict[str, Any]:

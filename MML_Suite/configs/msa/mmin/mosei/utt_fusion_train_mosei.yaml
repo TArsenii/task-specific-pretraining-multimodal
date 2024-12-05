@@ -1,126 +1,75 @@
 !StandardConfig
 experiment: !ExperimentConfig
-  name: "Self-MM MOSI Multimodal Training"
+  name: "MMIN_BASELINE MOSEI Multimodal Training"
   device: "cuda"
-  train_print_interval_epochs: 4
-  validation_print_interval_epochs: 4
+  train_print_interval_epochs: 1
+  validation_print_interval_epochs: 1
   is_train: true
   is_test: true
 
 model: !ModelConfig
-  name: "SELF-MM"
-  model_type: "Self-MM"
+  name: "UTT-Fusion"
+  model_type: "UttFusionModel"
   
-  # Individual encoders
-  text_encoder: !BertTextEncoder
-    language: "en"
-    use_finetune: true
-    pretrained_path: "$EXP_PATH/DATA/pretrained_berts/bert_en"
-    
-  audio_encoder: !AuViSubNet
-    in_size: 5
-    hidden_size: 32
-    out_size: 16
-    num_layers: 1
-    dropout: 0.0
-
-
-  video_encoder: !AuViSubNet
-    in_size: 20
+  netA: !LSTMEncoder
+    input_size: 74
     hidden_size: 64
-    out_size: 32
-    num_layers: 1
-    dropout: 0.0
+    embd_method: "maxpool"
 
-  audio_out: 16
-  video_out: 32
-  text_out: 768
+  netV: !LSTMEncoder
+    input_size: 35
+    hidden_size: 64
+    embd_method: "maxpool"
 
-  post_fusion_dim: 128
-  post_audio_dim: 16
-  post_video_dim: 32
-  post_text_dim: 64
+  netT: !TextCNN
+    input_size: 768
+    embd_size: 64
+    dropout: 0.7
+    in_channels: 1
+    out_channels: 128
+    kernel_heights: 
+      - 3
+      - 4
+      - 5
+  netC: !FcClassifier
+    input_dim: 192
+    layers: 
+      - 96
+      - 48
+    output_dim: 3
+    dropout: 0.66
+    use_bn: true
 
-  post_fusion_dropout: 0.1
-  post_audio_dropout: 0.1
-  post_video_dropout: 0.1
-  post_text_dropout: 0.0
-  
-  update_every: 4
-  need_data_aligned: False
+  clip: 1.0
 
-
-  # Feature management
-  feature_manager: !FeatureManager
-    modality_dims: 
-      !Modality multimodal: 128
-      !Modality text: 64
-      !Modality audio: 16
-      !Modality video: 32
-    device: "cuda"
-  
-  center_manager: !CenterManager
-    modality_dims:
-      !Modality multimodal: 128
-      !Modality text: 64
-      !Modality audio: 16
-      !Modality video: 32
-    device: "cuda"
-    exclude_zero: true
-    
-  labels_manager: !LabelManager
-    modalities: 
-      - !Modality multimodal
-      - !Modality text
-      - !Modality audio
-      - !Modality video
-    device: "cuda"
 
 training:
-  epochs: 50
-  batch_size: 32 
-  early_stopping: false ## Early stopping is bit difficult with this model since it get's updated every 4 epochs, whereas the early stopper still checks every epoch !TODO: Fix this
+  epochs: 20
+  batch_size: 256 
+  early_stopping: false
+  early_stopping_patience: 15
+  early_stopping_metric: "loss"
   num_modalities: 3
-  
-  # Optimizer settings with modality-specific parameters
   optimizer: !Optimizer
     name: "Adam"
-    param_groups:
-      - name: "text_params"
-        pattern: ["text"]  
-        lr: 5e-5
-        weight_decay: 0.001
-
-      - name: "audio"
-        pattern: ["audio"]  
-        lr: 1e-3
-        weight_decay: 0.01
-
-      - name: "video_params"
-        pattern: ["video"]  
-        lr: 1e-4
-        weight_decay: 0.001
-
-    # Default settings for parameters not covered by the above groups
     default_kwargs:
-      lr: 1e-3
-      weight_decay: 0.001
-    
-  scheduler: "plateau"
-  scheduler_kwargs:
-    mode: "min"
-    factor: 0.5
-    patience: 5
-    min_lr: 0.00001
-  
-  criterion: "na"  # Implemented in the model
-  update_epochs: 1  # How often to update labels
+      lr: 2e-4
+      weight_decay: 0.00001
+  criterion: "cross_entropy"
+  scheduler: "lambda"
+  scheduler_args:
+    lr_lambda: "lambda epoch: 1.0 - max(0, epoch + epoch_count - niter) / float(niter_decay + 1)"
+    epoch_count: 1
+    niter: 10
+    niter_decay: 10
+
+
 
 data: !DataConfig
   datasets:
     train: !DatasetConfig
-      dataset: "MOSI"
-      data_fp: "$EXP_PATH/DATA/MOSI/aligned_50.pkl"
+      dataset: "MOSEI"
+      data_fp: "$EXP_PATH/DATA/MOSEI/aligned.pkl"
       split: "train"
       target_modality: !Modality "MULTIMODAL"
       shuffle: true
@@ -134,10 +83,11 @@ data: !DataConfig
             missing_rate: 0.0  # Text is ALWAYS present when included in pattern
         selected_patterns: ["avt"]  # Only use these combinations of modalities
       kwargs:
+        labels_key: "classification_labels"
         aligned: true
     validation: !DatasetConfig
-      dataset: "MOSI"
-      data_fp: "$EXP_PATH/DATA/MOSI/aligned_50.pkl"
+      dataset: "MOSEI"
+      data_fp: "$EXP_PATH/DATA/MOSEI/aligned.pkl"
       split: "valid"
       shuffle: true
       target_modality: !Modality "MULTIMODAL"
@@ -152,10 +102,11 @@ data: !DataConfig
         selected_patterns: ["avt", "a", "v", "t", "av", "at", "vt"]
       kwargs:
         aligned: true
+        labels_key: "classification_labels"
 
     test: !DatasetConfig
-      dataset: "MOSI"
-      data_fp: "$EXP_PATH/DATA/MOSI/aligned_50.pkl"
+      dataset: "MOSEI"
+      data_fp: "$EXP_PATH/DATA/MOSEI/aligned.pkl"
       split: "test"
       target_modality: !Modality "MULTIMODAL"
       shuffle: true
@@ -170,9 +121,11 @@ data: !DataConfig
         selected_patterns: ["avt", "a", "v", "t", "av", "at", "vt"]
       kwargs:
         aligned: true
+        labels_key: "classification_labels"
+
     embeddings: !DatasetConfig
-      dataset: "MOSI"
-      data_fp: "$EXP_PATH/DATA/MOSI/aligned_50.pkl"
+      dataset: "MOSEI"
+      data_fp: "$EXP_PATH/DATA/MOSEI/aligned.pkl"
       split: "test"
       target_modality: !Modality "MULTIMODAL"
       shuffle: true
@@ -187,6 +140,8 @@ data: !DataConfig
         selected_patterns: ["avt"]
       kwargs:
         aligned: true
+        labels_key: "classification_labels"
+
 metrics:
   metrics:
     MAE:
@@ -198,8 +153,14 @@ metrics:
       kwargs: {}
       level: "batch"
     MSA:
-      function: "metrics.mosei_regression"
+      function: "metrics.msa_binary_classification"
       kwargs: {}
+      level: "epoch"
+    ConfusionMatrix:
+      function: "sklearn.metrics.confusion_matrix"
+      kwargs: {
+        "labels": [0, 1, 2]
+      }
       level: "epoch"
 
 logging:
@@ -208,6 +169,9 @@ logging:
   metrics_path: "$EXP_PATH/experiments_output/{experiment_name}/metrics/{run_id}"
   save_metric: "loss"
   monitor_path: "$EXP_PATH/experiments_output/{experiment_name}/monitoring/{run_id}"
+  tensorboard_path: "$EXP_PATH/experiments_output/{experiment_name}/tensorboard/{run_id}"
+  tb_record_only:
+    - "loss"
 
 monitoring:
   enabled: false

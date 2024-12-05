@@ -59,7 +59,7 @@ class MetricConfig(BaseConfig):
             try:
                 if "function" not in metric_info:
                     raise ValueError("Missing 'function' specification")
-                
+
                 if "level" not in metric_info:
                     metric_info["level"] = "batch"  # Default to batch-level
                 elif metric_info["level"] not in ["batch", "epoch", "both"]:
@@ -146,7 +146,6 @@ class MetricConfig(BaseConfig):
                 self._docs_cache[metric_name] = inspect.getdoc(func) or "No documentation available"
             except Exception as e:
                 self._docs_cache[metric_name] = f"Documentation unavailable: {str(e)}"
-
 
     def add_metric(
         self,

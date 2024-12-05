@@ -28,10 +28,9 @@ class ModelConfig(BaseConfig):
     def __post_init__(self):
         """Initialize and validate the model configuration."""
         console.rule(f"[heading]Initializing Model Configuration: {self.name}[/]")
-        self._validate_config()
         self._display_config()
 
-    def _validate_config(self) -> None:
+    def validate_config(self) -> None:
         """Validate the model configuration."""
         # Validate pretrained path
         if self.pretrained_path is not None:

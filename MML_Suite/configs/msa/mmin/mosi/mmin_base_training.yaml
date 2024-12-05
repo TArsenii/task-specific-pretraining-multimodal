@@ -1,120 +1,61 @@
 !StandardConfig
 experiment: !ExperimentConfig
-  name: "Self-MM MOSI Multimodal Training"
+  name: "MMIN_BASELINE MOSI Multimodal Training"
   device: "cuda"
-  train_print_interval_epochs: 4
-  validation_print_interval_epochs: 4
+  train_print_interval_epochs: 1
+  validation_print_interval_epochs: 1
   is_train: true
   is_test: true
 
 model: !ModelConfig
-  name: "SELF-MM"
-  model_type: "Self-MM"
+  name: "UTT-Fusion"
+  model_type: "UttFusionModel"
   
-  # Individual encoders
-  text_encoder: !BertTextEncoder
-    language: "en"
-    use_finetune: true
-    pretrained_path: "$EXP_PATH/DATA/pretrained_berts/bert_en"
-    
-  audio_encoder: !AuViSubNet
-    in_size: 5
-    hidden_size: 32
-    out_size: 16
-    num_layers: 1
-    dropout: 0.0
-
-
-  video_encoder: !AuViSubNet
-    in_size: 20
+  netA: !LSTMEncoder
+    input_size: 5
     hidden_size: 64
-    out_size: 32
-    num_layers: 1
-    dropout: 0.0
+    embd_method: "last"
 
-  audio_out: 16
-  video_out: 32
-  text_out: 768
+  netV: !LSTMEncoder
+    input_size: 20
+    hidden_size: 64
+    embd_method: "last"
 
-  post_fusion_dim: 128
-  post_audio_dim: 16
-  post_video_dim: 32
-  post_text_dim: 64
-
-  post_fusion_dropout: 0.1
-  post_audio_dropout: 0.1
-  post_video_dropout: 0.1
-  post_text_dropout: 0.0
-  
-  update_every: 4
-  need_data_aligned: False
+  netT: !TextCNN
+    input_size: 768
+    embd_size: 64
+    dropout: 0.5
+    in_channels: 1
+    out_channels: 128
+    kernel_heights: 
+      - 3
+      - 4
+      - 5
 
 
-  # Feature management
-  feature_manager: !FeatureManager
-    modality_dims: 
-      !Modality multimodal: 128
-      !Modality text: 64
-      !Modality audio: 16
-      !Modality video: 32
-    device: "cuda"
-  
-  center_manager: !CenterManager
-    modality_dims:
-      !Modality multimodal: 128
-      !Modality text: 64
-      !Modality audio: 16
-      !Modality video: 32
-    device: "cuda"
-    exclude_zero: true
-    
-  labels_manager: !LabelManager
-    modalities: 
-      - !Modality multimodal
-      - !Modality text
-      - !Modality audio
-      - !Modality video
-    device: "cuda"
+  netC: !FcClassifier
+    input_dim: 192
+    layers: 
+      - 192
+      - 64
+      - 32
+    output_dim: 3
+    dropout: 0.5
+
+  clip: 1.0
+
 
 training:
-  epochs: 50
+  epochs: 30
   batch_size: 32 
-  early_stopping: false ## Early stopping is bit difficult with this model since it get's updated every 4 epochs, whereas the early stopper still checks every epoch !TODO: Fix this
+  early_stopping: false
   num_modalities: 3
-  
-  # Optimizer settings with modality-specific parameters
   optimizer: !Optimizer
     name: "Adam"
-    param_groups:
-      - name: "text_params"
-        pattern: ["text"]  
-        lr: 5e-5
-        weight_decay: 0.001
-
-      - name: "audio"
-        pattern: ["audio"]  
-        lr: 1e-3
-        weight_decay: 0.01
-
-      - name: "video_params"
-        pattern: ["video"]  
-        lr: 1e-4
-        weight_decay: 0.001
-
-    # Default settings for parameters not covered by the above groups
     default_kwargs:
       lr: 1e-3
       weight_decay: 0.001
-    
-  scheduler: "plateau"
-  scheduler_kwargs:
-    mode: "min"
-    factor: 0.5
-    patience: 5
-    min_lr: 0.00001
-  
-  criterion: "na"  # Implemented in the model
-  update_epochs: 1  # How often to update labels
+  criterion: "cross_entropy"
 
 data: !DataConfig
   datasets:
@@ -134,12 +75,14 @@ data: !DataConfig
             missing_rate: 0.0  # Text is ALWAYS present when included in pattern
         selected_patterns: ["avt"]  # Only use these combinations of modalities
       kwargs:
+        labels_key: "classification_labels"
         aligned: true
     validation: !DatasetConfig
       dataset: "MOSI"
       data_fp: "$EXP_PATH/DATA/MOSI/aligned_50.pkl"
       split: "valid"
       shuffle: true
+
       target_modality: !Modality "MULTIMODAL"
       missing_patterns: !MissingPatternConfig
         modalities:
@@ -152,6 +95,7 @@ data: !DataConfig
         selected_patterns: ["avt", "a", "v", "t", "av", "at", "vt"]
       kwargs:
         aligned: true
+        labels_key: "classification_labels"
 
     test: !DatasetConfig
       dataset: "MOSI"
@@ -170,6 +114,8 @@ data: !DataConfig
         selected_patterns: ["avt", "a", "v", "t", "av", "at", "vt"]
       kwargs:
         aligned: true
+        labels_key: "classification_labels"
+
     embeddings: !DatasetConfig
       dataset: "MOSI"
       data_fp: "$EXP_PATH/DATA/MOSI/aligned_50.pkl"
@@ -187,6 +133,8 @@ data: !DataConfig
         selected_patterns: ["avt"]
       kwargs:
         aligned: true
+        labels_key: "classification_labels"
+
 metrics:
   metrics:
     MAE:

@@ -25,6 +25,12 @@ class AVMNIST(MultimodalBaseDataset):
 
     AVAILABLE_MODALITIES = {"audio": Modality.AUDIO, "image": Modality.IMAGE}
 
+    @staticmethod
+    def get_full_modality() -> str:
+        m = [k[0] for k in AVMNIST.AVAILABLE_MODALITIES.keys()]
+        m.sort()
+        return "".join(m)
+
     def __init__(
         self,
         data_fp: Union[str, Path],

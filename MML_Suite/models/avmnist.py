@@ -365,8 +365,8 @@ class AVMNIST(Module, MultiModalMonitoringMixin):
 
                 ## filter to only full modality availability
                 miss_type = np.array(miss_type)
-                A = A[miss_type == AVMNISTDataset.FULL_CONDITION]
-                I = I[miss_type == AVMNISTDataset.FULL_CONDITION]
+                A = A[miss_type == AVMNISTDataset.get_full_modality()]
+                I = I[miss_type == AVMNISTDataset.get_full_modality()]
 
                 A = A.to(device).float()
                 I = I.to(device).float()

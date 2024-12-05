@@ -5,22 +5,23 @@ import torch.nn as nn
 
 
 class ResidualAE(nn.Module):
-    """Residual autoencoder using fc layers
+    """
+    Residual autoencoder using fc layers
     layers should be something like [128, 64, 32]
     eg:[128,64,32]-> add: [(input_dim, 128), (128, 64), (64, 32), (32, 64), (64, 128), (128, input_dim)]
                       concat: [(input_dim, 128), (128, 64), (64, 32), (32, 64), (128, 128), (256, input_dim)]
     """
 
-    def __init__(self, layers, n_blocks, input_dim, dropout=0.5, use_bn=False):
+    def __init__(
+        self, layers: list[int], n_blocks: int, input_dim: int, *, dropout: float = 0.5, use_bn: bool = False
+    ) -> None:
         super(ResidualAE, self).__init__()
         self._layers = layers
         self.use_bn = use_bn
         self.dropout = dropout
         self.n_blocks = n_blocks
         self.input_dim = input_dim
-        self.transition = nn.Sequential(
-            nn.Linear(input_dim, input_dim), nn.ReLU(), nn.Linear(input_dim, input_dim)
-        )
+        self.transition = nn.Sequential(nn.Linear(input_dim, input_dim), nn.ReLU(), nn.Linear(input_dim, input_dim))
         for i in range(n_blocks):
             setattr(self, "encoder_" + str(i), self.get_encoder(layers))
             setattr(self, "decoder_" + str(i), self.get_decoder(layers))
@@ -79,17 +80,13 @@ class ResidualXE(nn.Module):
                       concat: [(input_dim, 128), (128, 64), (64, 32), (32, 64), (128, 128), (256, input_dim)]
     """
 
-    def __init__(
-        self, layers, n_blocks, input_dim, output_dim, dropout=0.5, use_bn=False
-    ):
+    def __init__(self, layers, n_blocks, input_dim, output_dim, dropout=0.5, use_bn=False):
         super(ResidualXE, self).__init__()
         self.use_bn = use_bn
         self.dropout = dropout
         self.n_blocks = n_blocks
         self.input_dim = input_dim
-        self.transition = nn.Sequential(
-            nn.Linear(input_dim, input_dim), nn.ReLU(), nn.Linear(input_dim, output_dim)
-        )
+        self.transition = nn.Sequential(nn.Linear(input_dim, input_dim), nn.ReLU(), nn.Linear(input_dim, output_dim))
         for i in range(n_blocks):
             setattr(self, "encoder_" + str(i), self.get_encoder(layers))
             setattr(self, "decoder_" + str(i), self.get_decoder(layers))
@@ -144,9 +141,7 @@ class ResidualXE(nn.Module):
 class ResidualUnetAE(nn.Module):
     """Residual autoencoder using fc layers"""
 
-    def __init__(
-        self, layers, n_blocks, input_dim, dropout=0.5, use_bn=False, fusion="concat"
-    ):
+    def __init__(self, layers, n_blocks, input_dim, dropout=0.5, use_bn=False, fusion="concat"):
         """Unet是对称的, 所以layers只用写一半就好
         eg:[128,64,32]-> add: [(input_dim, 128), (128, 64), (64, 32), (32, 64), (64, 128), (128, input_dim)]
                       concat: [(input_dim, 128), (128, 64), (64, 32), (32, 64), (128, 128), (256, input_dim)]
@@ -209,11 +204,7 @@ class ResidualUnetAE(nn.Module):
             layer = nn.Sequential(*layer)
             decoder.append(layer)
 
-        decoder.append(
-            nn.Sequential(
-                nn.Linear(layers[0] * self.expand_num, self.input_dim), nn.ReLU()
-            )
-        )
+        decoder.append(nn.Sequential(nn.Linear(layers[0] * self.expand_num, self.input_dim), nn.ReLU()))
         decoder = nn.Sequential(*decoder)
         return decoder
 
@@ -290,9 +281,7 @@ class SimpleFcAE(nn.Module):
         decoder_layer.append(self.input_dim)
         for i in range(0, len(decoder_layer) - 1):
             all_layers.append(nn.Linear(decoder_layer[i], decoder_layer[i + 1]))
-            all_layers.append(nn.ReLU()) if i == len(
-                decoder_layer
-            ) - 2 else all_layers.append(nn.LeakyReLU())
+            all_layers.append(nn.ReLU()) if i == len(decoder_layer) - 2 else all_layers.append(nn.LeakyReLU())
             if self.use_bn:
                 all_layers.append(nn.BatchNorm1d(decoder_layer[i]))
             if self.dropout > 0:

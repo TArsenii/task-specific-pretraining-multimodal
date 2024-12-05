@@ -1,5 +1,5 @@
 #!/bin/bash
-
+set -e
 RUNS=$1
 CONFIG=$2
 

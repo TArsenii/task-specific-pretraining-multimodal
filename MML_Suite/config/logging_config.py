@@ -3,7 +3,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from experiment_utils import SafeDict, get_console, get_logger
 from rich.table import Table
@@ -32,6 +32,8 @@ class LoggingConfig(BaseConfig):
     metrics_path: Optional[str] = None
     iid_metrics_path: Optional[str] = None
     monitor_path: Optional[str] = None
+    tensorboard_path: Optional[str] = None
+    tb_record_only: Optional[List[str]] = None
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any], run_id: int | str, experiment_name: str) -> "LoggingConfig":
@@ -48,6 +50,10 @@ class LoggingConfig(BaseConfig):
             data["iid_metrics_path"] = format_path_with_env(data["iid_metrics_path"])
         if "monitor_path" in data:
             data["monitor_path"] = format_path_with_env(data["monitor_path"])
+
+        if "tensorboard_path" in data:
+            data["tensorboard_path"] = format_path_with_env(data["tensorboard_path"])
+
         config_data = {"run_id": run_id, "experiment_name": experiment_name, **data}
 
         log_config = cls(**config_data)
@@ -73,7 +79,7 @@ class LoggingConfig(BaseConfig):
         """Convert spaces, hyphens, and other special characters to underscores."""
         return re.sub(r"[^\w\s-]|[\s-]+", "_", s).strip("_")
 
-    def _format_path(self, path: str) -> Path:
+    def format_path(self, path: str) -> Path:
         """Format a path string with config values and return a Path object."""
         if not path:
             return None
@@ -98,6 +104,7 @@ class LoggingConfig(BaseConfig):
             "metrics_path": "Metrics",
             "monitor_path": "Monitoring",
             "iid_metrics_path": "IID Metrics",
+            "tensorboard_path": "Tensorboard",
         }
 
         console.rule("[heading]Initialising Logging[/]")
@@ -111,7 +118,7 @@ class LoggingConfig(BaseConfig):
         for attr, desc in path_attrs.items():
             if hasattr(self, attr) and getattr(self, attr):
                 try:
-                    path = self._format_path(getattr(self, attr))
+                    path = self.format_path(getattr(self, attr))
                     setattr(self, attr, path)
                     table.add_row(desc, str(path), "✓ Formatted")
                     logger.debug(f"Processed {attr}: {path}")

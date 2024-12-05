@@ -11,11 +11,29 @@ from config import (
     StandardMultimodalConfig,
     ParameterGroupConfig,
     OptimizerConfig,
+    CMAMConfig,
+    AssociationNetworkConfig,
 )
 from experiment_utils import get_logger
 from modalities import add_modality
 from experiment_utils.managers import CenterManager, FeatureManager, LabelManager
-from models import ConvBlockArgs, MNISTAudio, MNISTImage, Self_MM, AuViSubNet, BertTextEncoder
+from experiment_utils.loss import LossFunctionGroup
+from models import (
+    ConvBlockArgs,
+    MNISTAudio,
+    MNISTImage,
+    Self_MM,
+    AuViSubNet,
+    BertTextEncoder,
+    InputEncoders,
+    CMAM,
+    LSTMEncoder,
+    TextCNN,
+    FcClassifier,
+    ResidualAE,
+    UttFusionModel,
+)
+
 
 logger = get_logger()
 
@@ -44,25 +62,80 @@ def register_scalar_constructor(tag, func):
 register_constructor("!DatasetConfig", DatasetConfig, from_dict=True, deep=True)
 register_constructor("!DataConfig", DataConfig, from_dict=True, deep=True)
 register_constructor("!MetricConfig", MetricConfig, from_dict=True)
-register_constructor("!LoggingConfig", LoggingConfig, from_dict=True)
+register_constructor("!LoggingConfig", LoggingConfig)
 register_constructor("!ModelConfig", ModelConfig, from_dict=True)
 register_constructor("!ExperimentConfig", ExperimentConfig)
 register_constructor("!StandardConfig", StandardMultimodalConfig)
 register_constructor("!ParameterGroupConfig", ParameterGroupConfig)
-register_constructor("!Optimizer", OptimizerConfig)
+register_constructor("!Optimizer", OptimizerConfig, from_dict=True, deep=True)
 
 # Registering constructors for models and other components
 register_scalar_constructor("!Modality", add_modality)
-register_constructor("!MNISTAudio", MNISTAudio)
-register_constructor("!MNISTImage", MNISTImage)
-register_constructor("!ConvBlock", ConvBlockArgs)
-register_constructor("!Self_MM", Self_MM)
-register_constructor("!AuViSubNet", AuViSubNet)
-register_constructor("!FeatureManager", FeatureManager, deep=True, )
+register_constructor(
+    "!MNISTAudio",
+    MNISTAudio,
+    deep=True,
+)
+register_constructor(
+    "!MNISTImage",
+    MNISTImage,
+    deep=True,
+)
+register_constructor(
+    "!ConvBlock",
+    ConvBlockArgs,
+    deep=True,
+)
+register_constructor(
+    "!Self_MM",
+    Self_MM,
+    deep=True,
+)
+register_constructor(
+    "!AuViSubNet",
+    AuViSubNet,
+    deep=True,
+)
+register_constructor(
+    "!LSTMEncoder",
+    LSTMEncoder,
+    deep=True,
+)
+register_constructor(
+    "!TextCNN",
+    TextCNN,
+    deep=True,
+)
+register_constructor(
+    "!FcClassifier",
+    FcClassifier,
+    deep=True,
+)
+register_constructor(
+    "!ResidualAE",
+    ResidualAE,
+    deep=True,
+)
+register_constructor("!LossFunctionGroup", LossFunctionGroup)
+register_constructor(
+    "!UttFusionModel",
+    UttFusionModel,
+    deep=True,
+)
+register_constructor(
+    "!FeatureManager",
+    FeatureManager,
+    deep=True,
+)
 register_constructor("!CenterManager", CenterManager, deep=True)
 register_constructor("!LabelManager", LabelManager, deep=True)
 register_constructor("!BertTextEncoder", BertTextEncoder)
 register_constructor("!MissingPatternConfig", MissingPatternConfig)
 register_constructor("!ModalityConfig", ModalityConfig)
+
+register_constructor("!AssociationNetworkConfig", AssociationNetworkConfig)
+register_constructor("!InputEncoders", InputEncoders)
+register_constructor("!CMAM", CMAM)
+register_constructor("!CMAMConfig", CMAMConfig)
 
 logger.debug("All YAML constructors registered successfully.")

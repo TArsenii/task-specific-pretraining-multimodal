@@ -19,7 +19,21 @@ def resolve_model_name(_type: str):
             return AVMNIST
         case "self-mm":
             from models.msa.self_mm import Self_MM
+
             return Self_MM
+        case "utt-fusion":
+            from models.msa.utt_fusion import UttFusionModel
+
+            return UttFusionModel
+        case "mmin":
+            from models.msa.mmin import MMIN
+
+            return MMIN
+        case "cmam":
+            from models.cmams import CMAM
+
+            return CMAM
+
         case _:
             raise ValueError(f"Unknown model type: {_type}")
 
@@ -136,7 +150,8 @@ def resolve_criterion(criterion_name: str) -> Type[nn.Module]:
         "gaussian_nll": nn.GaussianNLLLoss,
         "ctc": nn.CTCLoss,
         "cmam": CMAMLoss,
-        "na": lambda x: x
+        "na": lambda x: x,
+        "cycle": nn.MSELoss,
     }
 
     criterion_name = criterion_name.lower()

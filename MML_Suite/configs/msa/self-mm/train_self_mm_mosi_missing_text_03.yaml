@@ -4,10 +4,10 @@
 experiment: !ExperimentConfig
   name: "Self-MM MOSI Multimodal Training Baseline Missing Text 03"
   device: "cuda"
-  train_print_interval_epochs: 1
-  validation_print_interval_epochs: 1
-  do_train: true
-  do_test: true
+  train_print_interval_epochs: 4
+  validation_print_interval_epochs: 4 
+  is_train: true
+  is_test: true
 
 model: !ModelConfig
   name: "SELF-MM"
@@ -16,7 +16,7 @@ model: !ModelConfig
   # Individual encoders
   text_encoder: !BertTextEncoder
     language: "en"
-    use_finetune: false
+    use_finetune: true
     pretrained_path: "$EXP_PATH/DATA/pretrained_berts/bert_en"
     
   audio_encoder: !AuViSubNet
@@ -49,7 +49,7 @@ model: !ModelConfig
   post_text_dropout: 0.0
   
   update_every: 4
-  need_data_aligned: True
+  need_data_aligned: false
 
 
   # Feature management
@@ -80,8 +80,8 @@ model: !ModelConfig
 
 training:
   epochs: 50
-  batch_size: 16 # taken from "https://github.com/thuiar/MMSA/issues/10"
-  early_stopping: true
+  batch_size: 32 
+  early_stopping: false
   early_stopping_patience: 10
   num_modalities: 3
   
@@ -124,7 +124,6 @@ data: !DataConfig
     train: !DatasetConfig
       dataset: "MOSI"
       data_fp: "$EXP_PATH/DATA/MOSI/unaligned_50.pkl"
-      aligned: false
       split: "train"
       target_modality: !Modality "MULTIMODAL"
       shuffle: true
@@ -137,13 +136,13 @@ data: !DataConfig
           text: !ModalityConfig 
             missing_rate: 0.3  # Text is ALWAYS present when included in pattern
         selected_patterns: ["avt"]  # Only use these combinations of modalities
-
+      kwargs:
+        aligned: true
     validation: !DatasetConfig
       dataset: "MOSI"
       data_fp: "$EXP_PATH/DATA/MOSI/unaligned_50.pkl"
       split: "valid"
       shuffle: true
-      aligned: false
       target_modality: !Modality "MULTIMODAL"
       missing_patterns: !MissingPatternConfig
         modalities:
@@ -154,7 +153,8 @@ data: !DataConfig
           text: !ModalityConfig 
             missing_rate: 0.0  # Text is ALWAYS present when included in pattern
         selected_patterns: ["avt", "a", "v", "t", "av", "at", "vt"]
-
+      kwargs:
+        aligned: true
     test_no_missing: !DatasetConfig
       dataset: "MOSI"
       data_fp: "$EXP_PATH/DATA/MOSI/unaligned_50.pkl"
@@ -171,11 +171,12 @@ data: !DataConfig
           text: !ModalityConfig 
             missing_rate: 0.0  # Text is ALWAYS present when included in pattern
         selected_patterns: ["avt", "a", "v", "t", "av", "at", "vt"]
+      kwargs:
+        aligned: true
     test_missing: !DatasetConfig
       dataset: "MOSI"
       data_fp: "$EXP_PATH/DATA/MOSI/unaligned_50.pkl"
       split: "test"
-      aligned: false
       target_modality: !Modality "MULTIMODAL"
       shuffle: true
       missing_patterns: !MissingPatternConfig
@@ -185,9 +186,27 @@ data: !DataConfig
           video: !ModalityConfig
             missing_rate: 0.0  # Video is ALWAYS present when included in pattern
           text: !ModalityConfig 
-            missing_rate: 0.3  # Text is ALWAYS present when included in pattern
+            missing_rate: 0.3  # Text will be missing 30% of the time
         selected_patterns: ["avt", "a", "v", "t", "av", "at", "vt"]
-
+      kwargs:
+        aligned: true
+    embeddings: !DatasetConfig
+      dataset: "MOSI"
+      data_fp: "$EXP_PATH/DATA/MOSI/aligned_50.pkl"
+      split: "test"
+      target_modality: !Modality "MULTIMODAL"
+      shuffle: true
+      missing_patterns: !MissingPatternConfig
+        modalities:
+          audio: !ModalityConfig
+            missing_rate: 0.0  # Audio is ALWAYS present when included in pattern
+          video: !ModalityConfig
+            missing_rate: 0.0  # Video is ALWAYS present when included in pattern
+          text: !ModalityConfig 
+            missing_rate: 0.0  # Text is ALWAYS present when included in pattern
+        selected_patterns: ["avt"]
+      kwargs:
+        aligned: true
 metrics:
   metrics:
     MAE:

@@ -1,3 +1,4 @@
 from .corr import pearson
-from .msa import mosei_regression
-__all__ = ['pearson', "mosei_regression"]
+from .msa import msa_binary_classification
+
+__all__ = ["pearson", "msa_binary_classification"]

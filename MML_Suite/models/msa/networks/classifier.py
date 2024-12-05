@@ -13,12 +13,8 @@ class LSTMClassifier(nn.Module):
         self.dropout_rate = dropout_rate
 
         # defining modules - two layer bidirectional LSTM with layer norm in between
-        self.rnn1 = nn.LSTM(
-            input_size, hidden_size, bidirectional=True, batch_first=True
-        )
-        self.rnn2 = nn.LSTM(
-            2 * hidden_size, hidden_size, bidirectional=True, batch_first=True
-        )
+        self.rnn1 = nn.LSTM(input_size, hidden_size, bidirectional=True, batch_first=True)
+        self.rnn2 = nn.LSTM(2 * hidden_size, hidden_size, bidirectional=True, batch_first=True)
         self.fc1 = nn.Linear(hidden_size * 4, fc1_size)
         self.fc2 = nn.Linear(fc1_size, output_size)
         self.relu = nn.ReLU()
@@ -27,29 +23,18 @@ class LSTMClassifier(nn.Module):
         self.bn = nn.BatchNorm1d(hidden_size * 4)
 
     def extract_features(self, sequence, lengths, rnn1, rnn2, layer_norm):
-        packed_sequence = pack_padded_sequence(
-            sequence, lengths, batch_first=True, enforce_sorted=False
-        )
+        packed_sequence = pack_padded_sequence(sequence, lengths, batch_first=True, enforce_sorted=False)
         packed_h1, (final_h1, _) = rnn1(packed_sequence)
         padded_h1, _ = pad_packed_sequence(packed_h1, batch_first=True)
         normed_h1 = layer_norm(padded_h1)
-        packed_normed_h1 = pack_padded_sequence(
-            normed_h1, lengths, batch_first=True, enforce_sorted=False
-        )
+        packed_normed_h1 = pack_padded_sequence(normed_h1, lengths, batch_first=True, enforce_sorted=False)
         _, (final_h2, _) = rnn2(packed_normed_h1)
         return final_h1, final_h2
 
     def rnn_flow(self, x, lengths):
         batch_size = lengths.size(0)
-        h1, h2 = self.extract_features(
-            x, lengths, self.rnn1, self.rnn2, self.layer_norm
-        )
-        h = (
-            torch.cat((h1, h2), dim=2)
-            .permute(1, 0, 2)
-            .contiguous()
-            .view(batch_size, -1)
-        )
+        h1, h2 = self.extract_features(x, lengths, self.rnn1, self.rnn2, self.layer_norm)
+        h = torch.cat((h1, h2), dim=2).permute(1, 0, 2).contiguous().view(batch_size, -1)
         return self.bn(h)
 
     def mask2length(self, mask):
@@ -94,7 +79,9 @@ class Identity(nn.Module):
 
 
 class FcClassifier(nn.Module):
-    def __init__(self, input_dim, layers, output_dim, dropout=0.3, use_bn=False):
+    def __init__(
+        self, input_dim: int, layers: list[int], output_dim: int, *, dropout: float = 0.3, use_bn: bool = False
+    ):
         """Fully Connect classifier
         Parameters:
         --------------------------
