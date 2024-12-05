@@ -1,6 +1,9 @@
 # Lock files
 *.lock
 
+# DATA
+**/DATA
+
 # Experiment Outputs
 **experiment_output/
 *.ipynb

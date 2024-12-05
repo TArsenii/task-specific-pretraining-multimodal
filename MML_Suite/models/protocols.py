@@ -1,0 +1,2 @@
+class MultimodalModelProtocol:
+    pass
