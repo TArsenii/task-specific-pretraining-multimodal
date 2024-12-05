@@ -1,3 +1,10 @@
+# Lock files
+*.lock
+
+# Experiment Outputs
+**experiment_output/
+*.ipynb
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
