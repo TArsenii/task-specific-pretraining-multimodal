@@ -1,7 +1,6 @@
 import torch
-from torch.nn import Parameter, Module, Linear, init
 import torch.nn.functional as F
-
+from torch.nn import Linear, Module, Parameter, init
 
 # Code adapted from the fairseq repo.
 

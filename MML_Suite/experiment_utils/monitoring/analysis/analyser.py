@@ -9,29 +9,18 @@ from .stats import StatisticalMeasures
 class MonitoringAnalyser:
     """Enhanced analyzer with specific analysis methods."""
 
-    def analyze_gradients(
-        self, run_id: Optional[str] = None, layers: Optional[List[str]] = None
-    ) -> Dict[str, Any]:
+    def analyze_gradients(self, run_id: Optional[str] = None, layers: Optional[List[str]] = None) -> Dict[str, Any]:
         """Analyze gradient flow patterns."""
         results = {}
         run_ids = [run_id] if run_id else list(self.runs.keys())
 
         for rid in run_ids:
             grad_group = self.runs[rid]["gradients"]
-            epochs = sorted(
-                [
-                    int(k.split("_")[1])
-                    for k in grad_group.keys()
-                    if k.startswith("epoch_")
-                ]
-            )
+            epochs = sorted([int(k.split("_")[1]) for k in grad_group.keys() if k.startswith("epoch_")])
 
             epoch_results = {}
             for epoch in epochs:
-                if (
-                    self.config.start_epoch is not None
-                    and epoch < self.config.start_epoch
-                ):
+                if self.config.start_epoch is not None and epoch < self.config.start_epoch:
                     continue
                 if self.config.end_epoch is not None and epoch > self.config.end_epoch:
                     break
@@ -45,9 +34,7 @@ class MonitoringAnalyser:
                         continue
 
                     # Compute comprehensive gradient statistics
-                    layer_results[layer_name] = (
-                        StatisticalMeasures.compute_gradient_stats(layer_data[:])
-                    )
+                    layer_results[layer_name] = StatisticalMeasures.compute_gradient_stats(layer_data[:])
 
                 epoch_results[epoch] = layer_results
 
@@ -55,29 +42,18 @@ class MonitoringAnalyser:
 
         return results
 
-    def analyze_activations(
-        self, run_id: Optional[str] = None, layers: Optional[List[str]] = None
-    ) -> Dict[str, Any]:
+    def analyze_activations(self, run_id: Optional[str] = None, layers: Optional[List[str]] = None) -> Dict[str, Any]:
         """Analyze activation patterns."""
         results = {}
         run_ids = [run_id] if run_id else list(self.runs.keys())
 
         for rid in run_ids:
             act_group = self.runs[rid]["activations"]
-            epochs = sorted(
-                [
-                    int(k.split("_")[1])
-                    for k in act_group.keys()
-                    if k.startswith("epoch_")
-                ]
-            )
+            epochs = sorted([int(k.split("_")[1]) for k in act_group.keys() if k.startswith("epoch_")])
 
             epoch_results = {}
             for epoch in epochs:
-                if (
-                    self.config.start_epoch is not None
-                    and epoch < self.config.start_epoch
-                ):
+                if self.config.start_epoch is not None and epoch < self.config.start_epoch:
                     continue
                 if self.config.end_epoch is not None and epoch > self.config.end_epoch:
                     break
@@ -91,9 +67,7 @@ class MonitoringAnalyser:
                         continue
 
                     # Compute comprehensive activation statistics
-                    layer_results[layer_name] = (
-                        StatisticalMeasures.compute_activation_stats(layer_data[:])
-                    )
+                    layer_results[layer_name] = StatisticalMeasures.compute_activation_stats(layer_data[:])
 
                 epoch_results[epoch] = layer_results
 
@@ -101,29 +75,18 @@ class MonitoringAnalyser:
 
         return results
 
-    def analyze_weights(
-        self, run_id: Optional[str] = None, layers: Optional[List[str]] = None
-    ) -> Dict[str, Any]:
+    def analyze_weights(self, run_id: Optional[str] = None, layers: Optional[List[str]] = None) -> Dict[str, Any]:
         """Analyze weight evolution."""
         results = {}
         run_ids = [run_id] if run_id else list(self.runs.keys())
 
         for rid in run_ids:
             weight_group = self.runs[rid]["weights"]
-            epochs = sorted(
-                [
-                    int(k.split("_")[1])
-                    for k in weight_group.keys()
-                    if k.startswith("epoch_")
-                ]
-            )
+            epochs = sorted([int(k.split("_")[1]) for k in weight_group.keys() if k.startswith("epoch_")])
 
             epoch_results = {}
             for epoch in epochs:
-                if (
-                    self.config.start_epoch is not None
-                    and epoch < self.config.start_epoch
-                ):
+                if self.config.start_epoch is not None and epoch < self.config.start_epoch:
                     continue
                 if self.config.end_epoch is not None and epoch > self.config.end_epoch:
                     break
@@ -137,9 +100,7 @@ class MonitoringAnalyser:
                         continue
 
                     # Compute comprehensive weight statistics
-                    layer_results[layer_name] = (
-                        StatisticalMeasures.compute_weight_stats(layer_data[:])
-                    )
+                    layer_results[layer_name] = StatisticalMeasures.compute_weight_stats(layer_data[:])
 
                 epoch_results[epoch] = layer_results
 
@@ -147,22 +108,14 @@ class MonitoringAnalyser:
 
         return results
 
-    def get_temporal_evolution(
-        self, metric: str, run_id: str, layer: Optional[str] = None
-    ) -> Dict[str, np.ndarray]:
+    def get_temporal_evolution(self, metric: str, run_id: str, layer: Optional[str] = None) -> Dict[str, np.ndarray]:
         """Get temporal evolution of a metric."""
         valid_metrics = {"gradients", "activations", "weights"}
         if metric not in valid_metrics:
             raise ValueError(f"Metric must be one of {valid_metrics}")
 
         metric_group = self.runs[run_id][metric]
-        epochs = sorted(
-            [
-                int(k.split("_")[1])
-                for k in metric_group.keys()
-                if k.startswith("epoch_")
-            ]
-        )
+        epochs = sorted([int(k.split("_")[1]) for k in metric_group.keys() if k.startswith("epoch_")])
 
         evolution = defaultdict(list)
         for epoch in epochs:

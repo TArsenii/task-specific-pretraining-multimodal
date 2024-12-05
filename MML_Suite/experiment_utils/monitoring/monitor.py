@@ -2,10 +2,9 @@ from pathlib import Path
 
 import torch.nn as nn
 from config.monitor_config import MonitorConfig
+from experiment_utils.printing import get_console
 
 from .storage import MonitorStorage
-
-from experiment_utils.printing import get_console
 
 console = get_console()
 

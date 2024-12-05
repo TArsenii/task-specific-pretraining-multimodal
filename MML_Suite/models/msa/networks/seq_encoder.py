@@ -1,10 +1,11 @@
 from typing import Dict, List, Literal, Tuple
 
 import torch
+from modalities import Modality
 from torch import Tensor
 from torch.nn import GRU, LSTM, Conv1d, LayerNorm, Linear, Module, Sequential
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
-from modalities import Modality
+
 
 class SeqEncoder(Module):
     """Multimodal sequence encoder that processes audio, text, and video inputs.

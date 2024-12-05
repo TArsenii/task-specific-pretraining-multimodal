@@ -1,10 +1,88 @@
+import random
+from itertools import Dict, combinations
+from typing import Any, Callable, List, Literal, Optional, Tuple
+
+from modalities import Modality
 from torch.utils.data import Dataset
-from itertools import combinations
-from typing import List
 
 
 class MultimodalBaseDataset(Dataset):
-    """Base class for multimodal datasets with missing modality support."""
+    """Base class for multimodal datasets with mi ssing modality support."""
+
+    def __init__(
+        self,
+        split: Literal["train", "valid", "test"],
+        selected_patterns: Optional[List[str]] = None,
+        missing_patterns: Optional[Dict[str, Dict[str, float]]] = None,
+    ) -> None:
+        self.split = split.lower()
+        assert split in self.VALID_SPLITS, f"Invalid split provided, must be one of {self.VALID_SPLITS}"
+
+        self.missing_patterns = missing_patterns
+        # Handle pattern selection
+        if selected_patterns is not None:
+            self.selected_patterns = self.validate_patterns(selected_patterns)
+        else:
+            self.selected_patterns = self.get_all_possible_patterns()
+        if "m" in self.missing_patterns:
+            full_condition = "".join([k for k in self.AVAILABLE_MODALITIES.keys()])
+            self.missing_patterns[full_condition] = self.missing_patterns["m"]
+            del self.missing_patterns["m"]
+        self.pattern_indices = None
+
+    def get_sample_and_apply_mask(
+        self, pattern: str, sample, modality_loaders: Dict[str, Tuple[Callable, Modality]]
+    ) -> Dict[str, Any]:
+        """Load data for each modality and apply masking."""
+        for mod_name, (loader_fn, mod_enum) in modality_loaders.items():
+            if self.target_modality == Modality.MULTIMODAL or self.target_modality == mod_enum:
+                # Load data
+                data = loader_fn()
+
+                # Apply masking
+                if mod_name in pattern:
+                    prob = pattern[mod_name]
+                    mask = float(random.random() < prob) if self.split == "train" else prob
+                else:
+                    mask = 0.0
+
+                sample[f"{str(mod_enum)}_original"] = data * mask
+                sample[mod_enum] = data * mask
+                sample[f"{str(mod_enum)}_reverse"] = data * -1 * (mask - 1)
+                sample["missing_mask"][mod_enum] = mask
+
+        return sample
+
+    def _get_pattern_and_sample_idx(self, idx: int) -> Tuple[str, int]:
+        """
+        Get the pattern and corresponding sample index for a given dataset index.
+
+        Args:
+            idx (int): Dataset index.
+
+        Returns:
+            Tuple[str, int]: Tuple containing the pattern name and sample index.
+        """
+        if self.split == "train":
+            return random.choice(self.selected_patterns), idx
+        else:
+            pattern_idx = idx // self.num_samples
+            sample_idx = idx % self.num_samples
+            return self.selected_patterns[pattern_idx], sample_idx
+
+    def set_pattern_indices(self, n_samples: int) -> None:
+        # For validation/test, organize samples by pattern
+        if self.split != "train":
+            self.pattern_indices = {pattern: list(range(n_samples)) for pattern in self.selected_patterns}
+
+    def get_split(self) -> str:
+        return self.split
+
+    def get_selected_patterns(self) -> List[str]:
+        return self.selected_patterns
+
+    def get_missing_patterns(self) -> Dict[str, Dict[str, float]]:
+        return self.missing_patterns
 
     @staticmethod
     def get_full_modality() -> str:

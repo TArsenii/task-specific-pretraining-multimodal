@@ -1,5 +1,5 @@
-import os
 import json
+import os
 
 
 def remove_keys_from_json(root_dir, key_pattern="average_precision"):

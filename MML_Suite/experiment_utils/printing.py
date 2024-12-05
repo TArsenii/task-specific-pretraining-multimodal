@@ -1,6 +1,7 @@
 import os
 import re
 from collections import defaultdict
+from dataclasses import dataclass
 from functools import lru_cache
 from math import floor
 from typing import Any, Dict, List, Optional
@@ -9,13 +10,10 @@ import numpy as np
 from rich import box
 from rich.columns import Columns
 from rich.console import Console
-from rich.progress import BarColumn, Progress, SpinnerColumn, TaskID, TextColumn, TimeRemainingColumn
+from rich.progress import BarColumn, Column, Progress, SpinnerColumn, TaskID, TextColumn, TimeRemainingColumn
 from rich.table import Table
 from rich.text import Text
 from rich.theme import Theme
-
-from rich.progress import Column
-from dataclasses import dataclass
 
 
 @dataclass

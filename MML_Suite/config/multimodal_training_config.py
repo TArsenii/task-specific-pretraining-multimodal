@@ -13,14 +13,13 @@ from config.logging_config import LoggingConfig
 from config.metric_config import MetricConfig
 from config.model_config import ModelConfig
 from config.monitor_config import MonitorConfig
+from config.optimizer_config import OptimizerConfig, ParameterGroupsOptimizer
 from config.resolvers import (
     resolve_criterion,
     resolve_scheduler,
 )
-from experiment_utils import format_path_with_env
+from experiment_utils import format_path_with_env, get_console, get_logger
 from experiment_utils.loss import LossFunctionGroup
-from config.optimizer_config import OptimizerConfig, ParameterGroupsOptimizer
-from experiment_utils import get_console, get_logger
 from rich.panel import Panel
 from rich.table import Table
 

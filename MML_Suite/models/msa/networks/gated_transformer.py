@@ -4,7 +4,7 @@ from typing import Optional, Tuple
 import torch
 import torch.nn.functional as F
 from torch import Tensor
-from torch.nn import init, Module, ModuleList, Linear, LayerNorm, Sequential, Sigmoid
+from torch.nn import LayerNorm, Linear, Module, ModuleList, Sequential, Sigmoid, init
 
 from .div_encoder import DIVEncoder
 from .multihead_attention import MultiheadAttention

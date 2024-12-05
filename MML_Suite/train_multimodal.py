@@ -1,25 +1,22 @@
 import os
 import time
+import warnings
 from argparse import ArgumentParser
 from pathlib import Path
 from typing import Any, Dict
 
-
-import warnings
-
 import numpy as np
 import torch
-from torch.nn import Module
-from torch.optim import Optimizer
-from torch.optim.lr_scheduler import LRScheduler
-from torch.utils.data import DataLoader
 from config import StandardMultimodalConfig
 from config.resolvers import resolve_model_name
 from experiment_utils import (
     CheckpointManager,
     EmbeddingVisualizationReport,
+    EnhancedConsole,
     ExperimentMonitor,
     ExperimentReportGenerator,
+    LoggerSingleton,
+    LossFunctionGroup,
     MetricRecorder,
     MetricsReport,
     ModelReport,
@@ -28,13 +25,14 @@ from experiment_utils import (
     configure_logger,
     get_console,
     get_logger,
-    EnhancedConsole,
-    LoggerSingleton,
-    LossFunctionGroup,
 )
 from modalities import add_modality
 from rich import box
 from rich.panel import Panel
+from torch.nn import Module
+from torch.optim import Optimizer
+from torch.optim.lr_scheduler import LRScheduler
+from torch.utils.data import DataLoader
 
 warnings.filterwarnings(
     "error",

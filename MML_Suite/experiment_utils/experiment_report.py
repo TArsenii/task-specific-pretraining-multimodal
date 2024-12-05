@@ -1,12 +1,12 @@
 import json
 import os
 import subprocess
+import traceback
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Union
-import traceback
 
 import matplotlib.pyplot as plt
 import numpy as np

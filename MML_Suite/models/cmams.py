@@ -1,9 +1,10 @@
-from typing import Any, Dict, Union
+from typing import Any, Dict
 
 import numpy as np
 import torch
 from cmam_loss import CMAMLoss
 from config.resolvers import resolve_encoder
+from experiment_utils.metric_recorder import MetricRecorder
 from modalities import Modality
 from models.msa.utt_fusion import UttFusionModel
 from models.protocols import MultimodalModelProtocol
@@ -19,7 +20,6 @@ from torch.nn import (
     Sequential,
 )
 from torch.optim import Optimizer
-from experiment_utils.metric_recorder import MetricRecorder
 
 
 class AssociationNetwork(Module):

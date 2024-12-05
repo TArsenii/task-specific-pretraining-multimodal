@@ -1,39 +1,38 @@
 import yaml
 from config import (
+    AssociationNetworkConfig,
+    CMAMConfig,
     DataConfig,
     DatasetConfig,
-    ModalityConfig,
-    MissingPatternConfig,
     ExperimentConfig,
     LoggingConfig,
     MetricConfig,
+    MissingPatternConfig,
+    ModalityConfig,
     ModelConfig,
-    StandardMultimodalConfig,
-    ParameterGroupConfig,
     OptimizerConfig,
-    CMAMConfig,
-    AssociationNetworkConfig,
+    ParameterGroupConfig,
+    StandardMultimodalConfig,
 )
 from experiment_utils import get_logger
-from modalities import add_modality
-from experiment_utils.managers import CenterManager, FeatureManager, LabelManager
 from experiment_utils.loss import LossFunctionGroup
+from experiment_utils.managers import CenterManager, FeatureManager, LabelManager
+from modalities import add_modality
 from models import (
-    ConvBlockArgs,
-    MNISTAudio,
-    MNISTImage,
-    Self_MM,
+    CMAM,
     AuViSubNet,
     BertTextEncoder,
-    InputEncoders,
-    CMAM,
-    LSTMEncoder,
-    TextCNN,
+    ConvBlockArgs,
     FcClassifier,
+    InputEncoders,
+    LSTMEncoder,
+    MNISTAudio,
+    MNISTImage,
     ResidualAE,
+    Self_MM,
+    TextCNN,
     UttFusionModel,
 )
-
 
 logger = get_logger()
 

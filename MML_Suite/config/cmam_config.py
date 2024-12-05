@@ -1,7 +1,8 @@
 from dataclasses import dataclass
+
+from config.base_config import BaseConfig
 from config.model_config import ModelConfig
 from config.multimodal_training_config import BaseExperimentConfig
-from config.base_config import BaseConfig
 from modalities import Modality
 
 

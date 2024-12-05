@@ -10,13 +10,13 @@ __all__ = [
     "BertTextEncoder",
 ]
 
-from .utt_fusion import UttFusionModel
-from .self_mm import Self_MM, AuViSubNet
+from .networks.autoencoder import ResidualAE
+from .networks.bert_text_encoder import BertTextEncoder
+from .networks.classifier import FcClassifier
 from .networks.lstm import LSTMEncoder
 from .networks.textcnn import TextCNN
-from .networks.autoencoder import ResidualAE
-from .networks.classifier import FcClassifier
-from .networks.bert_text_encoder import BertTextEncoder
+from .self_mm import AuViSubNet, Self_MM
+from .utt_fusion import UttFusionModel
 
 
 def msa_binarize(preds, labels):

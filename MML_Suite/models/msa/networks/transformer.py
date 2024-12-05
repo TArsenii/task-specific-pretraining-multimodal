@@ -25,9 +25,7 @@ class ResidualAttentionBlock(nn.Module):
     def __init__(self, d_model: int, n_head: int, attn_mask: torch.Tensor = None):
         super().__init__()
 
-        self.attn = nn.MultiheadAttention(
-            d_model, n_head, dropout=0.2, batch_first=True
-        )
+        self.attn = nn.MultiheadAttention(d_model, n_head, dropout=0.2, batch_first=True)
         self.ln_1 = LayerNorm(d_model)
         self.ln_12 = LayerNorm(d_model)
         self.mlp = nn.Sequential(
@@ -48,11 +46,7 @@ class ResidualAttentionBlock(nn.Module):
         self.dropout = nn.Dropout(p=0.1)
 
     def attention(self, x: torch.Tensor):
-        self.attn_mask = (
-            self.attn_mask.to(dtype=x.dtype, device=x.device)
-            if self.attn_mask is not None
-            else None
-        )
+        self.attn_mask = self.attn_mask.to(dtype=x.dtype, device=x.device) if self.attn_mask is not None else None
         return self.attn(x, x, x, need_weights=False, attn_mask=self.attn_mask)[0]
 
     def forward(self, x: torch.Tensor):
@@ -80,18 +74,11 @@ class Transformer(nn.Module):
         self.width = width
         self.layers = layers
         self.embd_width = embd_width
-        self.resblocks = nn.Sequential(
-            *[
-                ResidualAttentionBlock(embd_width, heads, attn_mask)
-                for _ in range(layers)
-            ]
-        )
+        self.resblocks = nn.Sequential(*[ResidualAttentionBlock(embd_width, heads, attn_mask) for _ in range(layers)])
         self.proj = nn.Linear(width, embd_width)
 
         self.attention_vector_weight = nn.Parameter(torch.Tensor(self.embd_width, 1))
-        self.attention_layer = nn.Sequential(
-            nn.Linear(self.embd_width, self.embd_width), nn.Tanh()
-        )
+        self.attention_layer = nn.Sequential(nn.Linear(self.embd_width, self.embd_width), nn.Tanh())
         self.softmax = nn.Softmax(dim=-1)
 
         self.muvar = nn.Linear(self.embd_width, self.embd_width * 2)
@@ -107,14 +94,10 @@ class Transformer(nn.Module):
         u 是 attention vector 大小等于 hidden size
         """
         hidden_reps = self.attention_layer(x)  # [batch_size, seq_len, hidden_size]
-        atten_weight = (
-            hidden_reps @ self.attention_vector_weight
-        )  # [batch_size, seq_len, 1]
+        atten_weight = hidden_reps @ self.attention_vector_weight  # [batch_size, seq_len, 1]
         atten_weight = self.softmax(atten_weight)  # [batch_size, seq_len, 1]
         # [batch_size, seq_len, hidden_size] * [batch_size, seq_len, 1]  =  [batch_size, seq_len, hidden_size]
-        sentence_vector = torch.sum(
-            x * atten_weight, dim=1
-        )  # [batch_size, hidden_size]
+        sentence_vector = torch.sum(x * atten_weight, dim=1)  # [batch_size, hidden_size]
         return sentence_vector
 
     def embd_maxpool(self, x):
@@ -180,18 +163,11 @@ class Transformer2(nn.Module):
         self.width = width
         self.layers = layers
         self.embd_width = embd_width
-        self.resblocks = nn.Sequential(
-            *[
-                ResidualAttentionBlock(embd_width, heads, attn_mask)
-                for _ in range(layers)
-            ]
-        )
+        self.resblocks = nn.Sequential(*[ResidualAttentionBlock(embd_width, heads, attn_mask) for _ in range(layers)])
         self.proj = nn.Linear(width, embd_width)
 
         self.attention_vector_weight = nn.Parameter(torch.Tensor(self.embd_width, 1))
-        self.attention_layer = nn.Sequential(
-            nn.Linear(self.embd_width, self.embd_width), nn.Tanh()
-        )
+        self.attention_layer = nn.Sequential(nn.Linear(self.embd_width, self.embd_width), nn.Tanh())
         self.softmax = nn.Softmax(dim=-1)
 
         self.muvar = nn.Linear(self.embd_width, self.embd_width * 2)
@@ -207,14 +183,10 @@ class Transformer2(nn.Module):
         u 是 attention vector 大小等于 hidden size
         """
         hidden_reps = self.attention_layer(x)  # [batch_size, seq_len, hidden_size]
-        atten_weight = (
-            hidden_reps @ self.attention_vector_weight
-        )  # [batch_size, seq_len, 1]
+        atten_weight = hidden_reps @ self.attention_vector_weight  # [batch_size, seq_len, 1]
         atten_weight = self.softmax(atten_weight)  # [batch_size, seq_len, 1]
         # [batch_size, seq_len, hidden_size] * [batch_size, seq_len, 1]  =  [batch_size, seq_len, hidden_size]
-        sentence_vector = torch.sum(
-            x * atten_weight, dim=1
-        )  # [batch_size, hidden_size]
+        sentence_vector = torch.sum(x * atten_weight, dim=1)  # [batch_size, hidden_size]
         return sentence_vector
 
     def embd_maxpool(self, x):

@@ -5,11 +5,11 @@ import sys
 from pathlib import Path
 
 from experiment_utils.experiment_analyser import ExperimentAnalyser, Split
-from experiment_utils.printing import get_console, configure_console, get_table_width
+from experiment_utils.printing import configure_console, get_console, get_table_width
 from experiment_utils.themes import github_light
+from rich import box
 from rich.panel import Panel
 from rich.table import Table
-from rich import box
 
 configure_console(theme=github_light, width=get_table_width(0.66))
 console = get_console()

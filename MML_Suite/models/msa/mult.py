@@ -8,7 +8,7 @@ import torch.nn.functional as F
 from experiment_utils.utils import to_gpu_safe
 from modalities import Modality
 from torch import Tensor
-from torch.nn import Linear, Module, ModuleDict, BCELoss
+from torch.nn import BCELoss, Linear, Module, ModuleDict
 from torch.optim import Optimizer
 from torch.utils.data import DataLoader
 
@@ -71,7 +71,7 @@ class MultModalTransformer(Module):
         word2id: Dict[str, int] = None,
         lambda_d: float = 0.1,
         use_discriminator: bool = True,
-        clip_grad_norm: float = 0.8
+        clip_grad_norm: float = 0.8,
     ) -> None:
         super().__init__()
 
@@ -109,7 +109,7 @@ class MultModalTransformer(Module):
 
         self.proj_type = proj_type
         self.lambda_d = lambda_d
-        
+
         if use_discriminator:
             self.criterion_disc = BCELoss()
             self.lambda_d = self.lambda_d
@@ -331,12 +331,11 @@ class MultModalTransformer(Module):
         A, V, T, lengths, labels = (
             batch[Modality.AUDIO],
             batch[Modality.VIDEO],
-            batch[Modality.TEXT], ## can contain BERT inputs
+            batch[Modality.TEXT],  ## can contain BERT inputs
             batch["lengths"],
             batch["labels"],
         )
-      
- 
+
         A = A.to(device)
         V = V.to(device)
         T = to_gpu_safe(T)
@@ -347,7 +346,7 @@ class MultModalTransformer(Module):
         outputs = self(A, V, T, is_embedded_A=False, is_embedded_V=False, is_embedded_T=False)
         predictions = outputs["predictions"]
         features = outputs["features"]
-        
+
         loss = criterion(predictions, labels)
 
         if self.use_discriminator:
@@ -355,13 +354,13 @@ class MultModalTransformer(Module):
             disc_labels = features["discriminator_labels"]
             disc_loss = self.criterion_disc(disc_predictions, disc_labels)
             loss += self.lambda_d * disc_loss
-            
+
         loss.backward()
         torch.nn.utils.clip_grad_norm_(self.parameters(), self.clip_grad_norm)
         optimizer.step()
 
         ## Metrics
-        
+
         return {"loss": loss.item()}
 
     def validation_step(self, batch: Dict[str, Any], criterion: Module, device: torch.device) -> Dict[str, Any]:

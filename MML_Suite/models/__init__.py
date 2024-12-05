@@ -1,3 +1,22 @@
+from .avmnist import AVMNIST, MNISTAudio, MNISTImage
+from .cmams import CMAM, DualCMAM, InputEncoders
+from .conv import ConvBlock, ConvBlockArgs
+from .gates import GatedBiModalNetwork
+from .maxout import MaxOut
+from .mmimdb import GMUModel, MLPGenreClassifier, MMIMDbModalityEncoder
+from .msa import (
+    AuViSubNet,
+    BertTextEncoder,
+    FcClassifier,
+    LSTMEncoder,
+    ResidualAE,
+    Self_MM,
+    TextCNN,
+    UttFusionModel,
+    msa_binarize,
+)
+from .protocols import MultimodalModelProtocol
+
 __all__ = [
     "BasicCMAM",
     "DualCMAM",
@@ -8,7 +27,6 @@ __all__ = [
     "AVMNIST",
     "LSTMEncoder",
     "TextCNN",
-    "kaiming_init",
     "resolve_encoder",
     "MultimodalModelProtocol",
     "Self_MM",
@@ -21,32 +39,10 @@ __all__ = [
     "DualCMAM",
     "FcClassifier",
     "ResidualAE",
+    "GMUModel",
+    "MLPGenreClassifier",
+    "MMIMDbModalityEncoder",
+    "GatedBiModalNetwork",
+    "MaxOut",
 ]
-from torch.nn import BatchNorm2d, Conv2d, Linear, init
 
-from .msa import (
-    Self_MM,
-    UttFusionModel,
-    msa_binarize,
-    AuViSubNet,
-    TextCNN,
-    LSTMEncoder,
-    FcClassifier,
-    ResidualAE,
-    BertTextEncoder,
-)
-from .avmnist import AVMNIST, MNISTAudio, MNISTImage
-from .cmams import InputEncoders, CMAM, DualCMAM
-from .conv import ConvBlock, ConvBlockArgs
-
-from .protocols import MultimodalModelProtocol
-
-
-def kaiming_init(module):
-    if isinstance(module, (Conv2d, Linear)):
-        init.kaiming_normal_(module.weight, mode="fan_out", nonlinearity="relu")
-        if module.bias is not None:
-            init.constant_(module.bias, 0)
-    elif isinstance(module, BatchNorm2d):
-        init.constant_(module.weight, 1)
-        init.constant_(module.bias, 0)

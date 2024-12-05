@@ -1,17 +1,18 @@
 from __future__ import annotations
-import numpy as np
-import torch
-from torch.optim import Optimizer
-from torch import Tensor
-from torch.nn import Module
-import torch.nn.functional as F
+
 from typing import Any, Dict, Optional
 
-from modalities import Modality
+import numpy as np
+import torch
+import torch.nn.functional as F
 from experiment_utils import safe_detach
 from experiment_utils.loss import LossFunctionGroup
-from models.msa import LSTMEncoder, TextCNN, ResidualAE, FcClassifier, UttFusionModel
 from experiment_utils.metric_recorder import MetricRecorder
+from modalities import Modality
+from models.msa import FcClassifier, LSTMEncoder, ResidualAE, TextCNN, UttFusionModel
+from torch import Tensor
+from torch.nn import Module
+from torch.optim import Optimizer
 
 
 class MMIN(Module):
@@ -112,9 +113,9 @@ class MMIN(Module):
             batch[Modality.AUDIO],
             batch[Modality.VIDEO],
             batch[Modality.TEXT],
-            batch[str(Modality.AUDIO) + "_reverse"],
-            batch[str(Modality.VIDEO) + "_reverse"],
-            batch[str(Modality.TEXT) + "_reverse"],
+            batch[f"{str(Modality.AUDIO)}_reverse"],
+            batch[f"{str(Modality.VIDEO)}_reverse"],
+            batch[f"{str(Modality.TEXT)}_reverse"],
             batch["label"],
             batch["miss_type"],
         )

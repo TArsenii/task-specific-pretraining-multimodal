@@ -6,9 +6,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from experiment_utils import SafeDict, get_console, get_logger
-from rich.table import Table
-
 from experiment_utils.utils import format_path_with_env
+from rich.table import Table
 
 from .base_config import BaseConfig
 

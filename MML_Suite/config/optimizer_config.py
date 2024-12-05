@@ -1,15 +1,17 @@
-from collections import OrderedDict
-import traceback
-from typing import Any, Dict, List, Optional
-from dataclasses import dataclass, field
-import torch.optim as optim
-from rich.panel import Panel
-from pprint import pformat
 import re
+import traceback
+from collections import OrderedDict
+from dataclasses import dataclass, field
+from pprint import pformat
+from typing import Any, Dict, List, Optional
+
+import torch.optim as optim
+from experiment_utils import get_console, get_logger
+from rich.panel import Panel
 from torch.nn import Module
-from .resolvers import resolve_optimizer
-from experiment_utils import get_logger, get_console
+
 from .base_config import BaseConfig
+from .resolvers import resolve_optimizer
 
 logger = get_logger()
 

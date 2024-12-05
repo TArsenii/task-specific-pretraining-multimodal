@@ -1,50 +1,76 @@
-from typing import Any, Dict, Optional, Tuple, Union
+from collections import defaultdict
+from typing import Any, Dict, Optional
 
 import numpy as np
 import torch
 from experiment_utils.loss import LossFunctionGroup
 from experiment_utils.metric_recorder import MetricRecorder
-from experiment_utils.utils import safe_detach
 from experiment_utils.printing import get_console
+from experiment_utils.utils import safe_detach
 from modalities import Modality
 from models.msa.networks.classifier import FcClassifier
 from models.msa.networks.lstm import LSTMEncoder
 from models.msa.networks.textcnn import TextCNN
 from torch.nn import Module
 from torch.optim import Optimizer
-import torch.nn.functional as F
+from torch.utils.data import DataLoader
 
 console = get_console()
 
 
 class UttFusionModel(Module):
+    """
+    Fusion model for multimodal sentiment analysis using LSTM and TextCNN encoders
+    with a fully connected classifier for prediction.
+
+    This model supports audio, video, and text modalities, allowing for modular
+    replacement and missing data handling.
+    """
+
     def __init__(
         self,
         netA: LSTMEncoder,
         netV: LSTMEncoder,
         netT: TextCNN,
         netC: FcClassifier,
-        clip: float = 0.5,
         *,
+        clip: Optional[float] = None,
         pretrained_path: Optional[str] = None,
-    ):
-        """Initialize the LSTM autoencoder class
-        Parameters:
-            opt (Option class)-- stores all the experiment flags; needs to be a subclass of BaseOptions
+    ) -> None:
         """
-        super(UttFusionModel, self).__init__()
+        Initialize the UttFusionModel.
 
+        Args:
+            netA (LSTMEncoder): LSTM encoder for audio modality.
+            netV (LSTMEncoder): LSTM encoder for video modality.
+            netT (TextCNN): TextCNN encoder for text modality.
+            netC (FcClassifier): Fully connected classifier for fused features.
+            clip (Optional[float]): Gradient clipping value (if specified).
+            pretrained_path (Optional[str]): Path to pretrained weights (if any).
+        """
+        super().__init__()
         self.netA = netA
         self.netV = netV
         self.netT = netT
         self.netC = netC
-
         self.clip = clip
 
         if pretrained_path:
             self.load_state_dict(torch.load(pretrained_path, weights_only=True))
 
-    def get_encoder(self, modality: Modality | str):
+    def get_encoder(self, modality: Modality | str) -> Module:
+        """
+        Get the encoder module for a specific modality.
+
+        Args:
+            modality (Modality | str): Modality identifier.
+
+        Returns:
+            Module: Corresponding encoder module.
+
+        Raises:
+            ValueError: If the modality is invalid or unsupported.
+        """
         if isinstance(modality, str):
             modality = Modality.from_str(modality)
         match modality:
@@ -57,120 +83,50 @@ class UttFusionModel(Module):
             case _:
                 raise ValueError(f"Unknown modality: {modality}")
 
-    ## new forward function takes in values rather than from self. Missing data is expected to be applied PRIOR to calling forward
-    ## C-MAM generated features should be passed in in-place of the original feature(s)
     def forward(
         self,
-        A: torch.Tensor = None,
-        V: torch.Tensor = None,
-        T: torch.Tensor = None,
+        A: Optional[torch.Tensor] = None,
+        V: Optional[torch.Tensor] = None,
+        T: Optional[torch.Tensor] = None,
+        *,
         is_embd_A: bool = False,
         is_embd_V: bool = False,
         is_embd_T: bool = False,
-        device: torch.device = None,
-    ) -> Union[Tuple[torch.Tensor, torch.Tensor], torch.Tensor]:
-        assert not all((A is None, V is None, T is None)), "At least one of A, V, L must be provided"
+    ) -> torch.Tensor:
+        """
+        Perform a forward pass of the fusion model.
+
+        Args:
+            A (Optional[torch.Tensor]): Audio features or embeddings.
+            V (Optional[torch.Tensor]): Video features or embeddings.
+            T (Optional[torch.Tensor]): Text features or embeddings.
+            is_embd_A (bool): Whether the audio input is pre-embedded.
+            is_embd_V (bool): Whether the video input is pre-embedded.
+            is_embd_T (bool): Whether the text input is pre-embedded.
+
+        Returns:
+            torch.Tensor: Prediction logits.
+
+        Raises:
+            AssertionError: If no input is provided or all inputs are pre-embedded.
+        """
+        assert not all((A is None, V is None, T is None)), "At least one of A, V, T must be provided"
         assert not all([is_embd_A, is_embd_V, is_embd_T]), "Cannot have all embeddings as True"
 
-        if A is not None:
-            batch_size = A.size(0)
-        elif V is not None:
-            batch_size = V.size(0)
-        else:
-            batch_size = T.size(0)
-        if A is None:
-            A = torch.zeros(batch_size, 1, self.input_size_a).to(device)
-        if V is None:
-            V = torch.zeros(
-                batch_size,
-                1,
-                self.input_size_v,
-            ).to(device)
-        if T is None:
-            T = torch.zeros(batch_size, 50, self.input_size_t).to(device)
+        a_embd = self.netA(A) if not is_embd_A and A is not None else A
+        v_embd = self.netV(V) if not is_embd_V and V is not None else V
+        t_embd = self.netT(T) if not is_embd_T and T is not None else T
 
-        a_embd = self.netA(A) if not is_embd_A else A
-        v_embd = self.netV(V) if not is_embd_V else V
-        t_embd = self.netT(T) if not is_embd_T else T
-        fused = torch.cat([a_embd, v_embd, t_embd], dim=-1)
+        fused = torch.cat([embd for embd in [a_embd, v_embd, t_embd] if embd is not None], dim=-1)
         logits = self.netC(fused)
         return logits
 
-    def validation_step(
-        self,
-        batch: Dict[str, Any],
-        criterion: LossFunctionGroup,
-        device: torch.device,
-        metric_recorder: MetricRecorder,
-        return_test_info: bool = False,
-        **kwargs,
-    ) -> Dict[str, Any]:
-        self.eval()
-
-        if return_test_info:
-            all_predictions = []
-            all_labels = []
-            all_miss_types = []
-
-        with torch.no_grad():
-            (
-                A,
-                V,
-                T,
-                labels,
-                miss_type,
-            ) = (
-                batch[Modality.AUDIO],
-                batch[Modality.VIDEO],
-                batch[Modality.TEXT],
-                batch["label"],
-                batch["pattern_name"],
-            )
-
-            A, V, T, labels = (
-                A.to(device),
-                V.to(device),
-                T.to(device),
-                labels.to(device),
-            )
-
-            A = A.float()
-            V = V.float()
-            T = T.float()
-
-            logits = self.forward(A, V, T)
-            predictions = logits.argmax(dim=-1)
-
-            if return_test_info:
-                all_predictions.append(predictions.cpu().numpy())
-                all_labels.append(labels)
-                all_miss_types.append(miss_type)
-
-            labels = labels.squeeze()
-            logits = logits.squeeze()
-
-            loss = criterion(logits, labels)
-
-            labels = safe_detach(labels)
-            predictions = safe_detach(predictions).squeeze()
-
-            metrics = {}
-            miss_types = np.array(miss_type)
-            for m_type in set(miss_type):
-                mask = miss_types == m_type
-                mask_labels = labels[mask]
-                mask_preds = predictions[mask]
-                metric_recorder.update(mask_preds, mask_labels, m_type)
-
-        if return_test_info:
-            return {
-                "loss": loss.item(),
-                **metrics,
-                "predictions": all_predictions,
-                "labels": all_labels,
-                "miss_types": all_miss_types,
-            }
-        return {"loss": loss.item(), **metrics}
+    def flatten_parameters(self) -> None:
+        """
+        Flatten parameters for RNN layers to optimize training performance.
+        """
+        self.netA.rnn.flatten_parameters()
+        self.netV.rnn.flatten_parameters()
 
     def train_step(
         self,
@@ -179,76 +135,131 @@ class UttFusionModel(Module):
         criterion: LossFunctionGroup,
         device: torch.device,
         metric_recorder: MetricRecorder,
-        **kwargs,
-    ) -> dict:
+    ) -> Dict[str, Any]:
         """
         Perform a single training step.
 
         Args:
-            batch (tuple): Tuple containing (audio, video, text, labels, mask, lengths).
-            optimizer (torch.optim.Optimizer): The optimizer for the model.
-            criterion (torch.nn.Module): The loss function.
-            device (torch.device): The device to run the computations on.
+            batch (Dict[str, Any]): Batch of input data and labels.
+            optimizer (Optimizer): Optimizer for the model.
+            criterion (LossFunctionGroup): Loss function group.
+            device (torch.device): Computation device.
+            metric_recorder (MetricRecorder): Metric recorder for evaluation.
 
         Returns:
-            dict: A dictionary containing the loss and other metrics.
+            Dict[str, Any]: Training results including loss.
         """
-
         A, V, T, labels, _miss_type = (
-            batch[Modality.AUDIO],
-            batch[Modality.VIDEO],
-            batch[Modality.TEXT],
-            batch["label"],
+            batch[Modality.AUDIO].to(device).float(),
+            batch[Modality.VIDEO].to(device).float(),
+            batch[Modality.TEXT].to(device).float(),
+            batch["label"].to(device),
             batch["pattern_name"],
         )
 
-        (
-            A,
-            V,
-            T,
-            labels,
-        ) = (
-            A.to(device),
-            V.to(device),
-            T.to(device),
-            labels.to(device),
-        )
-
-        A = A.float()
-        V = V.float()
-        T = T.float()
-
         self.train()
-        logits = self.forward(A, V, T, device=device)
-
-        predictions = logits.argmax(dim=-1)
+        logits = self.forward(A, V, T)
 
         optimizer.zero_grad()
-        labels = labels.squeeze()
-        logits = logits.squeeze()
-        loss = criterion(logits, labels)
+        loss = criterion(logits.squeeze(), labels.squeeze())
         loss.backward()
 
-        torch.nn.utils.clip_grad_norm_(self.netA.parameters(), self.clip)
-        torch.nn.utils.clip_grad_norm_(self.netV.parameters(), self.clip)
-        torch.nn.utils.clip_grad_norm_(self.netT.parameters(), self.clip)
-        torch.nn.utils.clip_grad_norm_(self.netC.parameters(), self.clip)
-
+        if self.clip is not None:
+            torch.nn.utils.clip_grad_norm_(self.parameters(), self.clip)
         optimizer.step()
 
-        labels = safe_detach(labels)
-        predictions = safe_detach(predictions).squeeze()
-        _miss_type = np.array(_miss_type)
-        for m_type in set(_miss_type):
-            mask = _miss_type == m_type
-            mask_labels = labels[mask]
-            mask_preds = predictions[mask]
-            metric_recorder.update(mask_preds, mask_labels, m_type)
+        predictions = safe_detach(logits.argmax(dim=-1).squeeze())
+        labels = safe_detach(labels.squeeze())
 
-        return {
-            "loss": loss.item(),
-        }
+        metric_recorder.update_all(predictions=predictions, targets=labels, m_types=np.array(_miss_type))
+        return {"loss": loss.item()}
 
-    def flatten_parameters(self):
-        self.netA.rnn.flatten_parameters()
-        self.netV.rnn.flatten_parameters()
+    def validation_step(
+        self,
+        batch: Dict[str, Any],
+        criterion: LossFunctionGroup,
+        device: torch.device,
+        metric_recorder: MetricRecorder,
+        return_test_info: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        Perform a single validation step.
+
+        Args:
+            batch (Dict[str, Any]): Batch of input data and labels.
+            criterion (LossFunctionGroup): Loss function group.
+            device (torch.device): Computation device.
+            metric_recorder (MetricRecorder): Metric recorder for evaluation.
+            return_test_info (bool): Whether to return detailed test information.
+
+        Returns:
+            Dict[str, Any]: Validation results including loss and optional test info.
+        """
+        self.eval()
+
+        all_predictions, all_labels, all_miss_types = [], [], []
+
+        with torch.no_grad():
+            A, V, T, labels, miss_type = (
+                batch[Modality.AUDIO].to(device).float(),
+                batch[Modality.VIDEO].to(device).float(),
+                batch[Modality.TEXT].to(device).float(),
+                batch["label"].to(device),
+                batch["pattern_name"],
+            )
+
+            logits = self.forward(A, V, T)
+            predictions = logits.argmax(dim=-1)
+
+            if return_test_info:
+                all_predictions.append(predictions.cpu().numpy())
+                all_labels.append(labels.cpu().numpy())
+                all_miss_types.append(miss_type)
+
+            labels = safe_detach(labels.squeeze())
+            predictions = safe_detach(predictions.squeeze())
+            miss_types = np.array(miss_type)
+
+            loss = criterion(logits.squeeze(), labels)
+            metric_recorder.update_all(predictions=predictions, targets=labels, m_types=miss_types)
+
+        self.train()
+
+        if return_test_info:
+            return {
+                "loss": loss.item(),
+                "predictions": all_predictions,
+                "labels": all_labels,
+                "miss_types": all_miss_types,
+            }
+        return {"loss": loss.item()}
+
+    def get_embeddings(self, dataloader: DataLoader, device: torch.device) -> Dict[Modality, np.ndarray]:
+        """
+        Get embeddings for all samples in a dataloader.
+
+        Args:
+            dataloader (DataLoader): DataLoader for the dataset.
+            device (torch.device): Computation device.
+
+        Returns:
+            Dict[Modality, np.ndarray]: Dictionary of embeddings for each modality.
+        """
+        self.eval()
+        embeddings = defaultdict(list)
+        with torch.no_grad():
+            for batch in dataloader:
+                A, V, T = (
+                    batch[Modality.AUDIO].to(device).float(),
+                    batch[Modality.VIDEO].to(device).float(),
+                    batch[Modality.TEXT].to(device).float(),
+                )
+                a_embd = self.netA(A)
+                v_embd = self.netV(V)
+                t_embd = self.netT(T)
+
+                for mod, embd in zip([Modality.AUDIO, Modality.VIDEO, Modality.TEXT], [a_embd, v_embd, t_embd]):
+                    if embd is not None:
+                        embeddings[mod].append(safe_detach(embd))
+
+        return embeddings

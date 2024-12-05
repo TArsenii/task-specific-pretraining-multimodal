@@ -7,9 +7,10 @@ from typing import Dict, List, Union
 
 import numpy as np
 import pandas as pd
+from rich.table import Table
 from scipy import stats
 from scipy.stats import friedmanchisquare
-from rich.table import Table
+
 from .experiment_visualiser import ExperimentVisualiser
 from .logging import get_logger
 from .printing import get_console

@@ -1,10 +1,12 @@
 ## This file was taken and modified from https://github.com/declare-lab/MSA-Robustness/blob/main/Self-MM/models/subNets/BertTextEncoder.py
 from os import PathLike
 from typing import Literal
+
 import torch
 import torch.nn as nn
-from transformers import BertModel, BertTokenizer
 from experiment_utils import format_path_with_env
+from transformers import BertModel, BertTokenizer
+
 __all__ = ["BertTextEncoder"]
 
 
@@ -20,7 +22,7 @@ class BertTextEncoder(nn.Module):
         """
         super(BertTextEncoder, self).__init__()
         pretrained_path = format_path_with_env(pretrained_path)
-        
+
         assert language in ["en", "cn"], "Language must be either 'en' or 'cn'"
         self.language = language
         tokenizer_class = BertTokenizer

@@ -1,13 +1,14 @@
 import os
 import re
-
-from typing import Dict, List, Optional, Any
+import warnings
+from typing import Any, Dict, List, Optional
 
 import torch
-from torch import Tensor
-from numpy import ndarray
 from modalities import Modality
-import warnings
+from numpy import ndarray
+from torch import Tensor
+from torch.nn import BatchNorm2d, Conv2d, Linear, init
+
 from .printing import get_console
 
 console = get_console()
@@ -39,10 +40,11 @@ def gpu_memory() -> str:
     else:
         raise Exception("gpu_memory function called, but gpu is not available")
 
+
 def to_gpu_safe(x: Tensor | Dict[str | Modality, Tensor | Any]) -> Tensor | Dict[str | Modality, Tensor | Any]:
     """
     Safely move a tensor or dictionary containing tensors to the GPU. If the GPU is not available, fallsback to the CPU with a warning.
-    
+
     Args:
         x (Tensor | Dict[str  |  Modality, Tensor  |  Any]): The input(s) to move to the GPU (if available)
 
@@ -53,16 +55,23 @@ def to_gpu_safe(x: Tensor | Dict[str | Modality, Tensor | Any]) -> Tensor | Dict
     device = "cuda" if torch.cuda.is_available() else "cpu"
     if device == "cpu":
         warnings.warn("CUDA device not available, using CPU as a fallback")
-        console.info("[bold yellow]\u26A0[/] [yellow]CUDA device not available, using CPU as a fallback[/]")
-        
+        console.info("[bold yellow]\u26a0[/] [yellow]CUDA device not available, using CPU as a fallback[/]")
+
     if isinstance(x, Tensor):
         return x.to(device)
 
-    return {
-        k: v.to(device) if isinstance(v, Tensor) else v for k,v in x.items()
-    }
-            
-            
+    return {k: v.to(device) if isinstance(v, Tensor) else v for k, v in x.items()}
+
+
+def kaiming_init(module):
+    if isinstance(module, (Conv2d, Linear)):
+        init.kaiming_normal_(module.weight, mode="fan_out", nonlinearity="relu")
+        if module.bias is not None:
+            init.constant_(module.bias, 0)
+    elif isinstance(module, BatchNorm2d):
+        init.constant_(module.weight, 1)
+        init.constant_(module.bias, 0)
+
 
 def clean_checkpoints(
     checkpoints_dir: str,

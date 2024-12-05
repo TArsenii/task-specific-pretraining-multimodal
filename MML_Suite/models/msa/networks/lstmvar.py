@@ -33,14 +33,10 @@ class LSTMEncoder(nn.Module):
         u 是 attention vector 大小等于 hidden size
         """
         hidden_reps = self.attention_layer(r_out)  # [batch_size, seq_len, hidden_size]
-        atten_weight = (
-            hidden_reps @ self.attention_vector_weight
-        )  # [batch_size, seq_len, 1]
+        atten_weight = hidden_reps @ self.attention_vector_weight  # [batch_size, seq_len, 1]
         atten_weight = self.softmax(atten_weight)  # [batch_size, seq_len, 1]
         # [batch_size, seq_len, hidden_size] * [batch_size, seq_len, 1]  =  [batch_size, seq_len, hidden_size]
-        sentence_vector = torch.sum(
-            r_out * atten_weight, dim=1
-        )  # [batch_size, hidden_size]
+        sentence_vector = torch.sum(r_out * atten_weight, dim=1)  # [batch_size, hidden_size]
         return sentence_vector
 
     def embd_maxpool(self, r_out, h_n):
@@ -114,14 +110,10 @@ class LSTMEncoder2(nn.Module):
         u 是 attention vector 大小等于 hidden size
         """
         hidden_reps = self.attention_layer(r_out)  # [batch_size, seq_len, hidden_size]
-        atten_weight = (
-            hidden_reps @ self.attention_vector_weight
-        )  # [batch_size, seq_len, 1]
+        atten_weight = hidden_reps @ self.attention_vector_weight  # [batch_size, seq_len, 1]
         atten_weight = self.softmax(atten_weight)  # [batch_size, seq_len, 1]
         # [batch_size, seq_len, hidden_size] * [batch_size, seq_len, 1]  =  [batch_size, seq_len, hidden_size]
-        sentence_vector = torch.sum(
-            r_out * atten_weight, dim=1
-        )  # [batch_size, hidden_size]
+        sentence_vector = torch.sum(r_out * atten_weight, dim=1)  # [batch_size, hidden_size]
         return sentence_vector
 
     def embd_maxpool(self, r_out, h_n):

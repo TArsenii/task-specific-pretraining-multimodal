@@ -6,18 +6,17 @@ from typing import Any, Dict
 import numpy as np
 import torch
 import torch.nn.functional as F
-
 from data import MOSI
+from experiment_utils import CenterManager, FeatureManager, LabelManager, get_console, get_logger, safe_detach
 from experiment_utils.logging import LoggerSingleton
 from experiment_utils.printing import EnhancedConsole
-from experiment_utils import CenterManager, FeatureManager, LabelManager, get_console, get_logger, safe_detach
 from modalities import Modality
 from models.mixins import MultiModalMonitoringMixin
 from torch import Tensor
-from torch.utils.data import DataLoader
 from torch.nn import LSTM, Dropout, Linear, Module
 from torch.nn.utils.rnn import pack_padded_sequence
 from torch.optim import Optimizer
+from torch.utils.data import DataLoader
 
 DEFAULT_TEXT_LENGTH: int = 50
 console: EnhancedConsole = get_console()

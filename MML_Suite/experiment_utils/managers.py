@@ -1,8 +1,8 @@
 from typing import Dict, Optional
-import torch
-from modalities import Modality
 
+import torch
 from experiment_utils import get_console, safe_detach
+from modalities import Modality
 
 console = get_console()
 

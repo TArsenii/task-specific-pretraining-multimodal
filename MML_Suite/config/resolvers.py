@@ -1,11 +1,11 @@
 from typing import Type
+
 from cmam_loss import CMAMLoss
+from data import AVMNIST, IEMOCAP, MOSEI, MOSI, MSP_IMPROV, MMIMDb
 from experiment_utils import get_console, get_logger
 from torch import nn, optim
 from torch.optim import lr_scheduler
 from torch.utils.data import Dataset
-
-from data import AVMNIST, MOSI, MOSEI, IEMOCAP, MSP_IMPROV, MM_IMDb
 
 logger = get_logger()
 console = get_console()
@@ -29,6 +29,22 @@ def resolve_model_name(_type: str):
             from models.msa.mmin import MMIN
 
             return MMIN
+        case "mmimdb":
+            from models.mmimdb import GMUModel
+
+            return GMUModel
+        case "mmimdbmodalityencoder":
+            from models.mmimdb import MMIMDbModalityEncoder
+
+            return MMIMDbModalityEncoder
+        case "mlp_genre":
+            from models.mmimdb import MLPGenreClassifier
+
+            return MLPGenreClassifier
+        case "gated_bimodal":
+            from models.mmimdb import GatedBiModalNetwork
+
+            return GatedBiModalNetwork
         case "cmam":
             from models.cmams import CMAM
 
@@ -182,7 +198,7 @@ def resolve_dataset_name(dataset_name: str) -> Type[Dataset]:
         "mosei": MOSEI,
         "iemocap": IEMOCAP,
         "msp_improv": MSP_IMPROV,
-        "mm_imdb": MM_IMDb,
+        "mm_imdb": MMIMDb,
     }
 
     dataset_name = dataset_name.lower()

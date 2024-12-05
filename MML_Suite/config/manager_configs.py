@@ -1,7 +1,10 @@
-from typing import Dict, List
 from dataclasses import dataclass
+from typing import Dict, List
+
 from modalities import Modality
+
 from .base_config import BaseConfig
+
 
 @dataclass
 class FeatureManagerConfig(BaseConfig):

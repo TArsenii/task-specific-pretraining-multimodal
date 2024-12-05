@@ -1,94 +1,100 @@
 import pickle
-import random
+from os import PathLike
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 
 import torch
-from .base_dataset import MultimodalBaseDataset
-from collections import OrderedDict
-from experiment_utils import get_logger, get_console
+from data.base_dataset import MultimodalBaseDataset
+from experiment_utils import get_logger
 from modalities import Modality, add_modality
 from torch.nn.utils.rnn import pad_sequence
-from torch.utils.data import DataLoader, Dataset
 
 logger = get_logger()
-console = get_console()
 
 add_modality("video")
 
 
 class MultimodalSentimentDataset(MultimodalBaseDataset):
-    """Base class for CMU-MOSI and CMU-MOSEI datasets with missing modality support."""
+    """
+    Base class for CMU-MOSI and CMU-MOSEI datasets with missing modality support.
 
-    AVAILABLE_MODALITIES = OrderedDict(
-        [
-            ("audio", Modality.AUDIO),
-            ("video", Modality.VIDEO),
-            ("text", Modality.TEXT),
-        ]
-    )
+    Supports audio, video, and text modalities with customizable missing patterns,
+    aligned or unaligned data, and pattern-specific data loading.
+    """
 
-    @staticmethod
-    def get_full_modality() -> str:
-        m = [k[0] for k in MultimodalSentimentDataset.AVAILABLE_MODALITIES.keys()]
-        m.sort()
-        return "".join(m)
+    VALID_SPLIT: List[str] = ["train", "valid", "test"]
+    NUM_CLASSES: int = 3  # Assumes 3-way classification [positive, negative, neutral]
+    AVAILABLE_MODALITIES: Dict[str, Modality] = {
+        "audio": Modality.AUDIO,
+        "video": Modality.VIDEO,
+        "text": Modality.TEXT,
+    }
 
     def __init__(
         self,
-        data_fp: Union[str, Path],
+        data_fp: Path | PathLike,
         split: str,
-        target_modality: Union[str, Modality] = Modality.MULTIMODAL,
+        target_modality: Modality | str = Modality.MULTIMODAL,
+        *,
         missing_patterns: Optional[Dict[str, Dict[str, float]]] = None,
-        force_binary: bool = False,
         selected_patterns: Optional[List[str]] = None,
-        labels_key: str = "regression_labels",
+        labels_key: str = "classification_labels",
         aligned: bool = False,
         length: Optional[int] = None,
-        **kwargs,
-    ):
+        num_classes: Optional[int] = None,
+    ) -> None:
         """
-        Args:
-            data_fp: Path to data file
-            split: Dataset split ('train', 'valid', 'test')
-            target_modality: Target modality for model
-            missing_patterns: Dict of pattern configurations
-            force_binary: Whether to force binary masking
-            selected_patterns: List of patterns to use
-            labels_key: Key for accessing labels in data
-        """
-        super(MultimodalSentimentDataset, self).__init__()
-        self.data_fp = Path(data_fp)
-        self.split = split
-        self.aligned = aligned
+        Initialize the Multimodal Sentiment Dataset.
 
-        if self.aligned:
-            self.length = length
+        Args:
+            data_fp (PathLike): Path to the data file.
+            split (str): Dataset split ('train', 'valid', 'test').
+            target_modality (Modality | str): Target modality for the task.
+            missing_patterns (Optional[Dict[str, Dict[str, float]]]): Dictionary of missing patterns.
+            selected_patterns (Optional[List[str]]): Selected patterns for evaluation.
+            labels_key (str): Key to access labels in the data.
+            aligned (bool): Whether the data is aligned across modalities.
+            length (Optional[int]): Length of aligned sequences.
+            num_classes (Optional[int]): Number of output classes (overrides default).
+        """
+        # Set up missing patterns
+        m_patterns = missing_patterns or {
+            "atv": {"audio": 1.0, "text": 1.0, "video": 1.0},
+            "at": {"audio": 1.0, "text": 1.0, "video": 0.0},
+            "av": {"audio": 1.0, "text": 0.0, "video": 1.0},
+            "tv": {"audio": 0.0, "text": 1.0, "video": 1.0},
+            "a": {"audio": 1.0, "text": 0.0, "video": 0.0},
+            "t": {"audio": 0.0, "text": 1.0, "video": 0.0},
+            "v": {"audio": 0.0, "text": 0.0, "video": 1.0},
+        }
+
+        # Override number of classes if specified
+        if num_classes is not None:
+            self.NUM_CLASSES = num_classes
+
+        super().__init__(split=split, selected_patterns=selected_patterns, missing_patterns=m_patterns)
+
+        self.data_fp = Path(data_fp)
+        self.aligned = aligned
+        self.length = length if aligned else None
         self.labels_key = labels_key
+
         # Process target modality
         if isinstance(target_modality, str):
             target_modality = Modality.from_str(target_modality)
+        assert isinstance(
+            target_modality, Modality
+        ), f"Invalid modality provided, must be a Modality instance, not {type(target_modality)}"
+        assert (
+            target_modality in self.AVAILABLE_MODALITIES.values()
+        ), f"Invalid target modality provided, must be one of {list(self.AVAILABLE_MODALITIES.values())}"
         self.target_modality = target_modality
-
-        # Set up missing patterns
-        self.missing_patterns = missing_patterns or {}
-        self.force_binary = force_binary
 
         # Load and validate data
         self.data = self._load_data(labels_key)
         self.num_samples = len(self.data["label"])
 
-        # Set up pattern selection
-        if selected_patterns is not None:
-            self.selected_patterns = self.validate_patterns(selected_patterns)
-        else:
-            self.selected_patterns = self.get_all_possible_patterns()
-            if "m" in self.missing_patterns:
-                full_condition = "".join([k for k in self.AVAILABLE_MODALITIES.keys()])
-                self.missing_patterns[full_condition] = self.missing_patterns["m"]
-                del self.missing_patterns["m"]
-
-        # For validation/test, organize samples by pattern
+        # Set up pattern-specific indices for validation/test
         if split != "train":
             self.pattern_indices = {pattern: list(range(self.num_samples)) for pattern in self.selected_patterns}
 
@@ -101,7 +107,15 @@ class MultimodalSentimentDataset(MultimodalBaseDataset):
         )
 
     def _load_data(self, labels_key: str) -> Dict[str, torch.Tensor]:
-        """Load and preprocess data from file."""
+        """
+        Load and preprocess data from a pickle file.
+
+        Args:
+            labels_key (str): Key to access labels in the data.
+
+        Returns:
+            Dict[str, torch.Tensor]: Dictionary of tensors for each modality and labels.
+        """
         if not self.data_fp.exists():
             raise FileNotFoundError(f"Data file not found: {self.data_fp}")
 
@@ -112,15 +126,13 @@ class MultimodalSentimentDataset(MultimodalBaseDataset):
             raise KeyError(f"Split '{self.split}' not found in data")
 
         split_data = raw_data[self.split]
-
         if labels_key not in split_data:
             raise KeyError(f"Labels key '{labels_key}' not found in data")
 
-        # Convert data to tensors
         core_data = {
-            "audio": torch.tensor(split_data["audio"]).float(),
-            "video": torch.tensor(split_data["vision"]).float(),
-            "text": torch.tensor(split_data["text"]).float(),
+            Modality.AUDIO: torch.tensor(split_data["audio"]).float(),
+            Modality.VIDEO: torch.tensor(split_data["vision"]).float(),
+            Modality.TEXT: torch.tensor(split_data["text"]).float(),
             "label": torch.tensor(
                 split_data[labels_key], dtype=torch.float32 if "regression" in self.labels_key else torch.long
             ),
@@ -137,27 +149,27 @@ class MultimodalSentimentDataset(MultimodalBaseDataset):
         )
 
     def __len__(self) -> int:
-        if self.split == "train":
-            return self.num_samples
-        else:
-            return self.num_samples * len(self.selected_patterns)
+        """
+        Return the total number of samples in the dataset.
 
-    def _get_pattern_and_sample_idx(self, idx: int) -> tuple[str, int]:
-        """Get pattern and original sample index for a given dataset index."""
-        if self.split == "train":
-            return random.choice(self.selected_patterns), idx
-        else:
-            pattern_idx = idx // self.num_samples
-            sample_idx = idx % self.num_samples
-            return self.selected_patterns[pattern_idx], sample_idx
+        Returns:
+            int: Number of samples.
+        """
+        return self.num_samples if self.split == "train" else self.num_samples * len(self.selected_patterns)
 
     def __getitem__(self, idx: int) -> Dict[str, Any]:
-        """Get dataset item with missing pattern applied."""
-        # Get pattern and sample index
+        """
+        Get a dataset sample by index with missing pattern applied.
+
+        Args:
+            idx (int): Dataset index.
+
+        Returns:
+            Dict[str, Any]: A dictionary containing the sample data and metadata.
+        """
         pattern_name, sample_idx = self._get_pattern_and_sample_idx(idx)
         pattern = self.missing_patterns[pattern_name]
 
-        # Prepare base sample
         sample = {
             "label": self.data["label"][sample_idx],
             "pattern_name": pattern_name,
@@ -169,152 +181,80 @@ class MultimodalSentimentDataset(MultimodalBaseDataset):
             sample["audio_length"] = self.data["audio_lengths"][sample_idx]
             sample["video_length"] = self.data["video_lengths"][sample_idx]
 
-        # Apply masking to each modality
-        for mod_name, mod_enum in self.AVAILABLE_MODALITIES.items():
-            data = self.data[mod_name][sample_idx]
+        modality_loaders = {
+            "audio": (lambda: self.data[str(Modality.AUDIO)][sample_idx], Modality.AUDIO),
+            "video": (lambda: self.data[str(Modality.VIDEO)][sample_idx], Modality.VIDEO),
+            "text": (lambda: self.data[str(Modality.TEXT)][sample_idx], Modality.TEXT),
+        }
 
-            if mod_name in pattern:
-                prob = pattern[mod_name]
-                if self.force_binary:
-                    mask = float(prob > 0.5)
-                else:
-                    mask = float(random.random() < prob) if self.split == "train" else prob
-            else:
-                mask = 0.0
-
-            sample[str(mod_enum) + "_original"] = data
-            sample[mod_enum] = data * mask
-            sample[str(mod_enum) + "_reverse"] = data * -1 * (mask - 1)
-
-            sample["missing_mask"][mod_enum] = mask
-
-        # shape_info = {
-        #     mod_name: sample[mod_enum].shape
-        #     for mod_name, mod_enum in self.AVAILABLE_MODALITIES.items()
-        #     if mod_enum in sample
-        # }
-
-        # console.print(f"Shapes: {shape_info}")
-
-        # Handle target modality selection
-        if self.target_modality != Modality.MULTIMODAL:
-            return (
-                {
-                    self.target_modality: sample[self.target_modality],
-                    "label": sample["label"],
-                    "length": sample["length"],
-                    "pattern_name": sample["pattern_name"],
-                    "missing_mask": {self.target_modality: sample["missing_mask"][self.target_modality]},
-                    "sample_idx": sample["sample_idx"],
-                }
-                if self.aligned
-                else {
-                    self.target_modality: sample[self.target_modality],
-                    "label": sample["label"],
-                    "audio_length": sample["audio_length"],
-                    "video_length": sample["video_length"],
-                    "pattern_name": sample["pattern_name"],
-                    "missing_mask": {self.target_modality: sample["missing_mask"][self.target_modality]},
-                    "sample_idx": sample["sample_idx"],
-                }
-            )
+        sample = self.get_sample_and_apply_mask(pattern=pattern, sample=sample, modality_loaders=modality_loaders)
         return sample
 
     def collate_fn(self, batch: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """Collate batch of samples with pattern-aware batching."""
-        if self.split == "train":
-            return self._collate_train_batch(batch)
-        else:
-            return self._collate_eval_batch(batch)
+        """
+        Collate a batch of samples with pattern-aware batching.
+
+        Args:
+            batch (List[Dict[str, Any]]): List of samples.
+
+        Returns:
+            Dict[str, Any]: Collated batch of samples.
+        """
+        return self._collate_eval_batch(batch) if self.split != "train" else self._collate_train_batch(batch)
 
     def _collate_train_batch(self, batch: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """Collate training batch with mixed patterns."""
+        """
+        Collate training batch with mixed patterns.
 
-        # Basic items
+        Args:
+            batch (List[Dict[str, Any]]): List of training samples.
+
+        Returns:
+            Dict[str, Any]: Collated batch.
+        """
         collated = {
             "label": torch.stack([b["label"] for b in batch]),
-            "lengths": torch.stack([b["length"] for b in batch]),
             "pattern_names": [b["pattern_name"] for b in batch],
-            # "missing_masks": {
-            #     mod: torch.tensor([b["missing_mask"][mod] for b in batch], device=device)
-            #     for mod in self.AVAILABLE_MODALITIES.values()
-            # },
         }
 
-        # Handle modalities based on target
-        if self.target_modality == Modality.MULTIMODAL:
-            for mod_enum in self.AVAILABLE_MODALITIES.values():
-                sequences = [b[mod_enum] for b in batch]
-                padded = pad_sequence(sequences, batch_first=True, padding_value=0)
-                collated[mod_enum] = padded
-        else:
-            sequences = [b[self.target_modality] for b in batch]
-            padded = pad_sequence(sequences, batch_first=True, padding_value=0)
-            collated[self.target_modality] = padded
+        for mod_enum in self.AVAILABLE_MODALITIES.values():
+            sequences = [b.get(mod_enum) for b in batch if mod_enum in b]
+            collated[mod_enum] = pad_sequence(sequences, batch_first=True, padding_value=0) if sequences else None
 
         return collated
 
     def _collate_eval_batch(self, batch: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """Collate evaluation batch with pattern-specific grouping."""
-        # Group samples by pattern
+        """
+        Collate evaluation batch with pattern-specific grouping.
+
+        Args:
+            batch (List[Dict[str, Any]]): List of evaluation samples.
+
+        Returns:
+            Dict[str, Any]: Collated batch grouped by patterns.
+        """
         pattern_groups = {}
         for b in batch:
             pattern = b["pattern_name"]
-            if pattern not in pattern_groups:
-                pattern_groups[pattern] = []
-            pattern_groups[pattern].append(b)
+            pattern_groups.setdefault(pattern, []).append(b)
 
-        # Collate each pattern group
-        collated_groups = {}
-        for pattern, group in pattern_groups.items():
-            collated_groups[pattern] = self._collate_train_batch(group)
-
-        return collated_groups if len(pattern_groups) > 1 else list(collated_groups.values())[0]
-
-    def get_pattern_batches(self, batch_size: int, **dataloader_kwargs) -> Dict[str, DataLoader]:
-        """Get separate dataloaders for each pattern (validation/test only)."""
-        if self.split == "train":
-            raise ValueError("Pattern-specific batches only available for validation/test")
-
-        pattern_loaders = {}
-        for pattern in self.selected_patterns:
-            # Create pattern-specific dataset view
-            pattern_dataset = PatternSpecificDataset(self, pattern)
-
-            # Create dataloader
-            pattern_loaders[pattern] = DataLoader(
-                pattern_dataset,
-                batch_size=batch_size,
-                shuffle=False,
-                collate_fn=self._collate_train_batch,
-                **dataloader_kwargs,
-            )
-
-        return pattern_loaders
+        return {pattern: self._collate_train_batch(group) for pattern, group in pattern_groups.items()}
 
     @staticmethod
     def normalize_features(features: torch.Tensor, eps: float = 1e-8) -> torch.Tensor:
-        """Normalize features along time dimension."""
+        """
+        Normalize features along the time dimension.
+
+        Args:
+            features (torch.Tensor): Input features.
+            eps (float): Small value to prevent division by zero.
+
+        Returns:
+            torch.Tensor: Normalized features.
+        """
         mean = torch.mean(features, dim=0, keepdim=True)
-        std = torch.std(features, dim=0, keepdim=True)
-        std = torch.clamp(std, min=eps)
+        std = torch.std(features, dim=0, keepdim=True).clamp(min=eps)
         return (features - mean) / std
-
-
-class PatternSpecificDataset(Dataset):
-    """View of the main dataset that only shows samples for a specific pattern."""
-
-    def __init__(self, parent_dataset: MultimodalSentimentDataset, pattern: str):
-        self.parent = parent_dataset
-        self.pattern = pattern
-        self.sample_indices = self.parent.pattern_indices[pattern]
-
-    def __len__(self) -> int:
-        return len(self.sample_indices)
-
-    def __getitem__(self, idx: int) -> Dict[str, Any]:
-        real_idx = idx + (self.parent.selected_patterns.index(self.pattern) * self.parent.num_samples)
-        return self.parent[real_idx]
 
 
 class MOSEI(MultimodalSentimentDataset):
@@ -322,7 +262,15 @@ class MOSEI(MultimodalSentimentDataset):
 
     @staticmethod
     def get_num_classes(is_classification: bool = True) -> int:
-        """Get number of classes for the task."""
+        """
+        Get the number of classes for the task.
+
+        Args:
+            is_classification (bool): Whether the task is classification.
+
+        Returns:
+            int: Number of classes.
+        """
         return 3 if is_classification else 1
 
 
@@ -331,5 +279,13 @@ class MOSI(MultimodalSentimentDataset):
 
     @staticmethod
     def get_num_classes(is_classification: bool = True) -> int:
-        """Get number of classes for the task."""
+        """
+        Get the number of classes for the task.
+
+        Args:
+            is_classification (bool): Whether the task is classification.
+
+        Returns:
+            int: Number of classes.
+        """
         return 3 if is_classification else 1

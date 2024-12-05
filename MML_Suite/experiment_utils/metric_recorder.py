@@ -1,18 +1,20 @@
 from __future__ import annotations
+
 import importlib
+import re
 from collections import OrderedDict, defaultdict
 from functools import partial
 from os import PathLike
-import re
-from typing import Any, Callable, Dict, List, Optional, Union, Tuple, DefaultDict
+from typing import Any, Callable, DefaultDict, Dict, List, Optional, Set, Tuple, Union
 
 import numpy as np
 from config.metric_config import MetricConfig
 from numpy import ndarray
 from torch import Tensor
-from .utils import safe_detach
+
 from .logging import get_logger
 from .printing import get_console
+from .utils import safe_detach
 
 logger = get_logger()
 console = get_console()
@@ -130,9 +132,7 @@ class MetricRecorder:
                 raise type(e)(f"Error loading metric '{metric_name}': {str(e)}")
         return metrics
 
-    def update(
-        self, predictions: Union[Tensor, ndarray], targets: Union[Tensor, ndarray], modality: str
-    ) -> None:
+    def update(self, predictions: Tensor | ndarray, targets: Tensor | ndarray, modality: str) -> None:
         """
         Store predictions and targets for later metric calculation.
 
@@ -151,6 +151,23 @@ class MetricRecorder:
             raise ValueError(f"Shape mismatch between predictions {predictions.shape} and " f"targets {targets.shape}")
 
         self.modality_data[modality].append((predictions, targets))
+
+    def update_all(self, predictions: Tensor | ndarray, targets: Tensor | ndarray, m_types: Set[str]) -> None:
+        """
+        Store predictions and targets for later metric calculation. Applies the mask here instead of in the model code.
+
+        """
+        if not isinstance(m_types, set):
+            try:
+                m_types = set(m_types)
+            except Exception as e:
+                raise TypeError(f"m_types must be a set or set-like object: {str(e)}")
+
+        for m_type in m_types:
+            mask = m_types == m_type
+            mask_preds = predictions[mask]
+            mask_labels = targets[mask]
+            self.update(predictions=mask_preds, targets=mask_labels, modality=m_type)
 
     def calculate_metrics(
         self, metric_group: Optional[str] = None, epoch: Optional[int] = None, loss: Optional[float] = None
