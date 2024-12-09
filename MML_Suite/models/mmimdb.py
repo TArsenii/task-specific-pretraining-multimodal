@@ -11,62 +11,92 @@ from modalities import Modality
 from models.gates import GatedBiModalNetwork
 from models.maxout import MaxOut
 from torch import Tensor
-from torch.nn import (
-    BatchNorm1d,
-    Dropout,
-    Linear,
-    Module,
-    Sequential,
-)
+from torch.nn import BatchNorm1d, Dropout, Linear, Module, Sequential
 from torch.optim import Optimizer
 from torch.utils.data import DataLoader
 
 
 class MLPGenreClassifier(Module):
-    def __init__(self, input_size: int, output_size: int, hidden_size: int):
+    """
+    Multi-Layer Perceptron classifier for genre classification in the MMIMDb dataset.
+    """
+
+    def __init__(self, input_size: int, output_size: int, hidden_size: int) -> None:
+        """
+        Initialize the MLP classifier.
+
+        Args:
+            input_size (int): Input feature size.
+            output_size (int): Number of output classes.
+            hidden_size (int): Dimension of the hidden layers.
+        """
         super().__init__()
         self.input_size = input_size
         self.output_size = output_size
         self.hidden_size = hidden_size
 
-        self.bn_one = BatchNorm1d(input_size)
-        self.fc_one = MaxOut(input_size, hidden_size, use_bias=False)
-        self.dropout_one = Dropout(p=0.5)
+        self.net = Sequential(
+            BatchNorm1d(input_size),
+            MaxOut(input_size, hidden_size, use_bias=False),
+            Dropout(p=0.5),
+            BatchNorm1d(hidden_size),
+            MaxOut(hidden_size, hidden_size, use_bias=False),
+            Dropout(p=0.5),
+            BatchNorm1d(hidden_size),
+            Linear(hidden_size, output_size),
+        )
 
-        self.bn_two = BatchNorm1d(hidden_size)
-        self.fc_two = MaxOut(hidden_size, hidden_size, use_bias=False)
-        self.dropout_two = Dropout(p=0.5)
+    def forward(self, tensor: Tensor) -> Tensor:
+        """
+        Perform a forward pass through the classifier.
 
-        self.bn_three = BatchNorm1d(hidden_size)
-        self.fc_three = Linear(hidden_size, output_size)
+        Args:
+            tensor (Tensor): Input tensor.
 
-    def forward(self, tensor):
-        tensor = self.bn_one(tensor)
-        tensor = self.fc_one(tensor)
-        tensor = self.dropout_one(tensor)
-
-        tensor = self.bn_two(tensor)
-        tensor = self.fc_two(tensor)
-        tensor = self.dropout_two(tensor)
-        tensor = self.bn_three(tensor)
-        tensor = self.fc_three(tensor)
-
-        return tensor
+        Returns:
+            Tensor: Output logits.
+        """
+        return self.net(tensor)
 
 
 class MMIMDbModalityEncoder(Module):
-    def __init__(self, input_dim: int, output_dim: int):
-        super(MMIMDbModalityEncoder, self).__init__()
+    """
+    Modality encoder for MMIMDb dataset, used for both image and text modalities.
+    """
+
+    def __init__(self, input_dim: int, output_dim: int) -> None:
+        """
+        Initialize the modality encoder.
+
+        Args:
+            input_dim (int): Input feature size.
+            output_dim (int): Output embedding size.
+        """
+        super().__init__()
         self.net = Sequential(
             BatchNorm1d(input_dim),
             Linear(input_dim, output_dim),
         )
 
     def forward(self, x: Tensor) -> Tensor:
+        """
+        Perform a forward pass through the modality encoder.
+
+        Args:
+            x (Tensor): Input tensor.
+
+        Returns:
+            Tensor: Encoded tensor.
+        """
         return self.net(x)
 
 
 class GMUModel(Module):
+    """
+    Gated Multimodal Unit (GMU)-based model for multimodal learning on MMIMDb dataset.
+    Combines image and text modalities for genre classification.
+    """
+
     def __init__(
         self,
         image_encoder: MMIMDbModalityEncoder,
@@ -74,60 +104,23 @@ class GMUModel(Module):
         gated_bimodal_network: GatedBiModalNetwork,
         classifier: MLPGenreClassifier,
         binary_threshold: float = 0.5,
-    ):
-        super(GMUModel, self).__init__()
+    ) -> None:
+        """
+        Initialize the GMUModel.
+
+        Args:
+            image_encoder (MMIMDbModalityEncoder): Encoder for the image modality.
+            text_encoder (MMIMDbModalityEncoder): Encoder for the text modality.
+            gated_bimodal_network (GatedBiModalNetwork): GMU for fusing modalities.
+            classifier (MLPGenreClassifier): MLP classifier for final predictions.
+            binary_threshold (float): Threshold for binary classification.
+        """
+        super().__init__()
         self.image_model = image_encoder
         self.text_model = text_encoder
         self.gmu = gated_bimodal_network
         self.mm_mlp = classifier
         self.binary_threshold = binary_threshold
-
-    def flatten_parameters(self):
-        pass
-
-    def get_encoder(self, modality: Modality) -> MMIMDbModalityEncoder:
-        if modality == Modality.IMAGE:
-            return self.image_model
-        if modality == Modality.TEXT:
-            return self.text_model
-
-    def freeze_irrelevant_parameters(self, modality: Modality) -> None:
-        if modality == Modality.IMAGE:
-            self.text_model.requires_grad_(False)
-            self.image_model.requires_grad_(True)
-            self.gmu.requires_grad_(True)
-            self.mm_mlp.requires_grad_(True)
-        if modality == Modality.TEXT:
-            self.text_model.requires_grad_(True)
-            self.image_model.requires_grad_(False)
-            self.gmu.requires_grad_(True)
-            self.mm_mlp.requires_grad_(True)
-        if Modality == Modality.MULTIMODAL:
-            self.text_model.requires_grad_(True)
-            self.image_model.requires_grad_(True)
-            self.gmu.requires_grad_(True)
-            self.mm_mlp.requires_grad_(True)
-
-    def get_relevant_parameters(self, modality: Modality) -> Dict[str, Tensor]:
-        if modality == Modality.IMAGE:
-            encoder = self.image_model
-            prefix = "iamge_model."
-
-        if modality == Modality.TEXT:
-            encoder = self.text_model
-            prefix = "text_model."
-        if modality == Modality.MULTIMODAL:
-            return self.state_dict()
-
-        encoder_params = {f"{prefix}{name}": param for name, param in encoder.state_dict().items()}
-
-        gmu_params = {f"gmu.{name}": param for name, param in self.gmu.state_dict().items()}
-
-        # Get classifier parameters
-        classifier_params = {f"mm_mlp.{name}": param for name, param in self.mm_mlp.state_dict().items()}
-
-        # Combine encoder and classifier parameters
-        return {**encoder_params, **gmu_params, **classifier_params}
 
     def forward(
         self,
@@ -137,6 +130,18 @@ class GMUModel(Module):
         is_embd_I: bool = False,
         is_embd_T: bool = False,
     ) -> Tensor:
+        """
+        Perform a forward pass through the model.
+
+        Args:
+            I (Tensor): Image input or embedding.
+            T (Tensor): Text input or embedding.
+            is_embd_I (bool): Whether the image input is pre-embedded.
+            is_embd_T (bool): Whether the text input is pre-embedded.
+
+        Returns:
+            Tensor: Output logits.
+        """
         assert not all((I is None, T is None)), "At least one modality must be provided"
         assert not all((is_embd_I, is_embd_T)), "Cannot both be embeddings"
 
@@ -155,22 +160,26 @@ class GMUModel(Module):
         criterion: LossFunctionGroup,
         device: torch.device,
         metric_recorder: MetricRecorder,
-    ) -> dict[str, Any]:
+    ) -> Dict[str, Any]:
+        """
+        Perform a single training step.
+
+        Args:
+            batch (Dict[str, Any]): Batch of input data and labels.
+            optimizer (Optimizer): Optimizer for training.
+            criterion (LossFunctionGroup): Loss function for training.
+            device (torch.device): Computation device.
+            metric_recorder (MetricRecorder): Metric recorder for tracking performance.
+
+        Returns:
+            Dict[str, Any]: Dictionary containing the training loss.
+        """
         I, T, labels, miss_type = (
-            batch[Modality.IMAGE],
-            batch[Modality.TEXT],
-            batch["label"],
+            batch[Modality.IMAGE].to(device).float(),
+            batch[Modality.TEXT].to(device).float(),
+            batch["label"].to(device),
             batch["pattern_name"],
         )
-
-        I, T, labels = (
-            I.to(device),
-            T.to(device),
-            labels.to(device),
-        )
-
-        I = I.float()
-        T = T.float()
 
         self.train()
         optimizer.zero_grad()
@@ -180,12 +189,11 @@ class GMUModel(Module):
         loss.backward()
         optimizer.step()
 
-        predictions = safe_detach(torch.nn.functional.sigmoid(logits))
+        predictions = safe_detach(torch.sigmoid(logits))
         predictions = (predictions > self.binary_threshold).astype(int)
-
         labels = safe_detach(labels)
-
         miss_type = np.array(miss_type)
+
         metric_recorder.update_all(predictions=predictions, targets=labels, m_types=miss_type)
         return {"loss": loss.item()}
 
@@ -196,54 +204,49 @@ class GMUModel(Module):
         device: torch.device,
         metric_recorder: MetricRecorder,
         return_test_info: bool = False,
-    ):
+    ) -> Dict[str, Any]:
+        """
+        Perform a single validation step.
+
+        Args:
+            batch (Dict[str, Any]): Batch of input data and labels.
+            criterion (LossFunctionGroup): Loss function for validation.
+            device (torch.device): Computation device.
+            metric_recorder (MetricRecorder): Metric recorder for tracking performance.
+            return_test_info (bool): Whether to return additional test information.
+
+        Returns:
+            Dict[str, Any]: Validation results, including loss and optionally predictions.
+        """
         self.eval()
-
-        if return_test_info:
-            all_predictions = []
-            all_labels = []
-            all_miss_types = []
-
         with torch.no_grad():
             I, T, labels, miss_type = (
-                batch[Modality.IMAGE],
-                batch[Modality.TEXT],
-                batch["label"],
+                batch[Modality.IMAGE].to(device).float(),
+                batch[Modality.TEXT].to(device).float(),
+                batch["label"].to(device),
                 batch["pattern_name"],
             )
 
-            I, T, labels = (
-                I.to(device),
-                T.to(device),
-                labels.to(device),
-            )
-
-            I = I.float()
-            T = T.float()
-
             logits = self.forward(I=I, T=T)
             loss = criterion(logits, labels)
-            predictions = safe_detach(torch.nn.functional.sigmoid(logits))
-            predictions = (predictions > 0.5).astype(int)
+            predictions = safe_detach(torch.sigmoid(logits))
+            predictions = (predictions > self.binary_threshold).astype(int)
 
             labels = safe_detach(labels)
-            if return_test_info:
-                all_predictions.append(predictions)
-                all_labels.append(labels)
-                all_miss_types.append(miss_type)
             miss_type = np.array(miss_type)
-            metric_recorder.update_all(predictions=predictions, targets=labels, m_types=miss_type)
-        self.train()
 
-        if return_test_info:
-            return {
-                "loss": loss.item(),
-                "predictions": all_predictions,
-                "labels": all_labels,
-                "miss_types": all_miss_types,
-            }
+            metric_recorder.update_all(predictions=predictions, targets=labels, m_types=miss_type)
 
         return {"loss": loss.item()}
+
+    def __str__(self) -> str:
+        """
+        Return a string representation of the model.
+
+        Returns:
+            str: Model components as a string.
+        """
+        return f"{self.image_model}\n{self.text_model}\n{self.gmu}\n{self.mm_mlp}"
 
     def get_embeddings(self, dataloader: DataLoader, device: torch.device) -> Dict[Modality, np.ndarray]:
         """
@@ -284,6 +287,3 @@ class GMUModel(Module):
                 embeddings[Modality.TEXT].append(safe_detach(text_embedding))
 
         return embeddings
-
-    def __str__(self):
-        return str(self.image_model) + "\n" + str(self.text_model) + "\n" + str(self.gmu) + "\n" + str(self.mm_mlp)

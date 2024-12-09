@@ -1,3 +1,4 @@
+from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass
@@ -35,7 +36,7 @@ class LoggingConfig(BaseConfig):
     tb_record_only: Optional[List[str]] = None
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any], run_id: int | str, experiment_name: str) -> "LoggingConfig":
+    def from_dict(cls, data: Dict[str, Any], run_id: int | str, experiment_name: str) -> LoggingConfig:
         """Create LoggingConfig from a dictionary with logging."""
 
         if isinstance(run_id, int):
@@ -129,7 +130,7 @@ class LoggingConfig(BaseConfig):
 
         console.print(table)
 
-    def _create_directories(self) -> None:
+    def create_directories(self) -> None:
         """Create directories for all paths if they don't exist."""
         console.print("\n[bold yellow]Creating Directories...[/]")
 

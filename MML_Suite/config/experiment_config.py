@@ -29,6 +29,7 @@ class ExperimentConfig(BaseConfig):
     train_print_interval_epochs: int = 1
     validation_print_interval_epochs: int = 1
     dry_run: bool = False
+    cross_validation: Optional[int] = None
 
     def __post_init__(self):
         """Initialize experiment configuration and set up environment."""
@@ -37,6 +38,8 @@ class ExperimentConfig(BaseConfig):
         )
         assert self.train_print_interval_epochs > 0, "Print interval must be positive"
         assert self.validation_print_interval_epochs > 0, "Print interval must be positive"
+        if self.cross_validation:
+            assert self.cross_validation > 0, "Cross-validation fold must be positive"
         self._setup_seed()
         self._setup_device()
         self._display_config()
@@ -103,6 +106,10 @@ class ExperimentConfig(BaseConfig):
         console.print(f"  Train Mode: {'Enabled' if self.is_train else 'Disabled'}")
         console.print(f"  Train Print Interval: {self.train_print_interval_epochs} epochs")
         console.print(f"  Validation Print Interval: {self.validation_print_interval_epochs} epochs")
+        console.print(f"  Dry Run: {'Enabled' if self.dry_run else 'Disabled'}")
+        if self.cross_validation:
+            console.print(f"  Cross-Validation Folds: {self.cross_validation}")
+            
 
         if self.debug:
             console.print("\n[yellow]Warning: Debug mode is enabled[/]")
@@ -119,6 +126,9 @@ class ExperimentConfig(BaseConfig):
             "is_train": self.is_train,
             "train_print_interval_epochs": self.train_print_interval_epochs,
             "validation_print_interval_epochs": self.validation_print_interval_epochs,
+            "dry_run": self.dry_run,
+            "cross_validation": self.cross_validation,
+            
         }
 
     def __str__(self) -> str:

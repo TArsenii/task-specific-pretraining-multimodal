@@ -32,6 +32,8 @@ from models import (
     Self_MM,
     TextCNN,
     UttFusionModel,
+    MMIMDbModalityEncoder, 
+    GatedBiModalNetwork, GMUModel, MLPGenreClassifier, MaxOut
 )
 
 logger = get_logger()
@@ -119,6 +121,31 @@ register_constructor("!LossFunctionGroup", LossFunctionGroup)
 register_constructor(
     "!UttFusionModel",
     UttFusionModel,
+    deep=True,
+)
+register_constructor(
+    "!MMIMDbModalityEncoder",
+    MMIMDbModalityEncoder,
+    deep=True,
+)
+register_constructor(
+    "!MaxOut",
+    MaxOut,
+    deep=True,
+)
+register_constructor(
+    "!GatedBiModalNetwork",
+    GatedBiModalNetwork,
+    deep=True,
+)
+register_constructor(
+    "!GMUModel",
+    GMUModel,
+    deep=True,
+)
+register_constructor(
+    "!MLPGenreClassifier",
+    MLPGenreClassifier,
     deep=True,
 )
 register_constructor(

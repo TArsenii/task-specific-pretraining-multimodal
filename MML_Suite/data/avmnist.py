@@ -149,22 +149,6 @@ class AVMNIST(MultimodalBaseDataset):
         else:
             return self.num_samples * len(self.selected_patterns)
 
-    def _get_pattern_and_sample_idx(self, idx: int) -> Tuple[str, int]:
-        """
-        Get the pattern and sample index for a given dataset index.
-
-        Args:
-            idx (int): Dataset index.
-
-        Returns:
-            Tuple[str, int]: Tuple containing the pattern name and sample index.
-        """
-        if self.split == "train":
-            return random.choice(self.selected_patterns), idx
-        else:
-            pattern_idx = idx // self.num_samples
-            sample_idx = idx % self.num_samples
-            return self.selected_patterns[pattern_idx], sample_idx
 
     @lru_cache(maxsize=1000)
     def _load_audio(self, path: str) -> torch.Tensor:

@@ -1,0 +1,188 @@
+!StandardConfig
+experiment: !ExperimentConfig
+  name: "MMIN_BASELINE MOSEI Multimodal Training"
+  device: "cuda"
+  train_print_interval_epochs: 1
+  validation_print_interval_epochs: 1
+  is_train: true
+  is_test: true
+
+model: !ModelConfig
+  name: "UTT-Fusion"
+  model_type: "UttFusionModel"
+  
+  netA: !LSTMEncoder
+    input_size: 74
+    hidden_size: 64
+    embd_method: "maxpool"
+
+  netV: !LSTMEncoder
+    input_size: 35
+    hidden_size: 64
+    embd_method: "maxpool"
+
+  netT: !TextCNN
+    input_size: 768
+    embd_size: 64
+    dropout: 0.7
+    in_channels: 1
+    out_channels: 128
+    kernel_heights: 
+      - 3
+      - 4
+      - 5
+  netC: !FcClassifier
+    input_dim: 192
+    layers: 
+      - 96
+      - 48
+    output_dim: 3
+    dropout: 0.66
+    use_bn: true
+
+  clip: 1.0
+
+
+training:
+  epochs: 20
+  batch_size: 256 
+  early_stopping: false
+  early_stopping_patience: 15
+  early_stopping_metric: "loss"
+  num_modalities: 3
+  optimizer: !Optimizer
+    name: "Adam"
+    default_kwargs:
+      lr: 2e-4
+      weight_decay: 0.00001
+  criterion: "cross_entropy"
+  scheduler: "lambda"
+  scheduler_args:
+    lr_lambda: "lambda epoch: 1.0 - max(0, epoch + epoch_count - niter) / float(niter_decay + 1)"
+    epoch_count: 1
+    niter: 10
+    niter_decay: 10
+
+
+
+data: !DataConfig
+  datasets:
+    train: !DatasetConfig
+      dataset: "MOSEI"
+      data_fp: "$EXP_PATH/DATA/MOSEI/aligned.pkl"
+      split: "train"
+      target_modality: !Modality "MULTIMODAL"
+      shuffle: true
+      missing_patterns: !MissingPatternConfig
+        modalities:
+          audio: !ModalityConfig
+            missing_rate: 0.0  # Audio is ALWAYS present when included in pattern
+          video: !ModalityConfig
+            missing_rate: 0.0  # Video is ALWAYS present when included in pattern
+          text: !ModalityConfig 
+            missing_rate: 0.0  # Text is ALWAYS present when included in pattern
+        selected_patterns: ["avt"]  # Only use these combinations of modalities
+      kwargs:
+        labels_key: "classification_labels"
+        aligned: true
+    validation: !DatasetConfig
+      dataset: "MOSEI"
+      data_fp: "$EXP_PATH/DATA/MOSEI/aligned.pkl"
+      split: "valid"
+      shuffle: true
+      target_modality: !Modality "MULTIMODAL"
+      missing_patterns: !MissingPatternConfig
+        modalities:
+          audio: !ModalityConfig
+            missing_rate: 0.0  # Audio is ALWAYS present when included in pattern
+          video: !ModalityConfig
+            missing_rate: 0.0  # Video is ALWAYS present when included in pattern
+          text: !ModalityConfig 
+            missing_rate: 0.0  # Text is ALWAYS present when included in pattern
+        selected_patterns: ["avt", "a", "v", "t", "av", "at", "vt"]
+      kwargs:
+        aligned: true
+        labels_key: "classification_labels"
+
+    test: !DatasetConfig
+      dataset: "MOSEI"
+      data_fp: "$EXP_PATH/DATA/MOSEI/aligned.pkl"
+      split: "test"
+      target_modality: !Modality "MULTIMODAL"
+      shuffle: true
+      missing_patterns: !MissingPatternConfig
+        modalities:
+          audio: !ModalityConfig
+            missing_rate: 0.0  # Audio is ALWAYS present when included in pattern
+          video: !ModalityConfig
+            missing_rate: 0.0  # Video is ALWAYS present when included in pattern
+          text: !ModalityConfig 
+            missing_rate: 0.0  # Text is ALWAYS present when included in pattern
+        selected_patterns: ["avt", "a", "v", "t", "av", "at", "vt"]
+      kwargs:
+        aligned: true
+        labels_key: "classification_labels"
+
+    embeddings: !DatasetConfig
+      dataset: "MOSEI"
+      data_fp: "$EXP_PATH/DATA/MOSEI/aligned.pkl"
+      split: "test"
+      target_modality: !Modality "MULTIMODAL"
+      shuffle: true
+      missing_patterns: !MissingPatternConfig
+        modalities:
+          audio: !ModalityConfig
+            missing_rate: 0.0  # Audio is ALWAYS present when included in pattern
+          video: !ModalityConfig
+            missing_rate: 0.0  # Video is ALWAYS present when included in pattern
+          text: !ModalityConfig 
+            missing_rate: 0.0  # Text is ALWAYS present when included in pattern
+        selected_patterns: ["avt"]
+      kwargs:
+        aligned: true
+        labels_key: "classification_labels"
+
+metrics:
+  metrics:
+    MAE:
+      function: "sklearn.metrics.mean_absolute_error"
+      kwargs: {}
+      level: "batch"  
+    MSE:
+      function: "sklearn.metrics.mean_squared_error"
+      kwargs: {}
+      level: "batch"
+    MSA:
+      function: "metrics.msa_binary_classification"
+      kwargs: {}
+      level: "epoch"
+    ConfusionMatrix:
+      function: "sklearn.metrics.confusion_matrix"
+      kwargs: {
+        "labels": [0, 1, 2]
+      }
+      level: "epoch"
+
+logging:
+  log_path: "$EXP_PATH/experiments_output/{experiment_name}/logs/{run_id}"
+  model_output_path: "$EXP_PATH/experiments_output/{experiment_name}/models/{run_id}"
+  metrics_path: "$EXP_PATH/experiments_output/{experiment_name}/metrics/{run_id}"
+  save_metric: "loss"
+  monitor_path: "$EXP_PATH/experiments_output/{experiment_name}/monitoring/{run_id}"
+  tensorboard_path: "$EXP_PATH/experiments_output/{experiment_name}/tensorboard/{run_id}"
+  tb_record_only:
+    - "loss"
+
+monitoring:
+  enabled: false
+  gradient_interval: 100
+  activation_interval: 100
+  weight_interval: 200
+  buffer_size: 1000
+  compression: "gzip"
+  compression_opts: 4
+  enable_gradient_tracking: true
+  enable_activation_tracking: true
+  enable_weight_tracking: true
+  enable_layer_convergence: true
+  enable_information_flow: false

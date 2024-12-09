@@ -3,6 +3,7 @@ import re
 import warnings
 from typing import Any, Dict, List, Optional
 
+import h5py
 import torch
 from modalities import Modality
 from numpy import ndarray
@@ -12,6 +13,22 @@ from torch.nn import BatchNorm2d, Conv2d, Linear, init
 from .printing import get_console
 
 console = get_console()
+
+
+def hdf5_to_dict(f: h5py.File) -> Dict[str, Any]:
+    """
+    Convert an HDF5 file to a dictionary.
+
+    Args:
+    - f (h5py.File): HDF5 file object.
+
+    Returns:
+    - Dict[str, Any]: Dictionary containing the contents of the HDF5 file.
+    """
+    return {
+        k: f[k][()] for k in f.keys()
+    }
+    
 
 
 def format_path_with_env(path_template, **kwargs):
