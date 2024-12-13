@@ -4,8 +4,9 @@ from itertools import chain, combinations
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
-from config import BaseConfig
-from experiment_utils import get_console, get_logger
+from config.base_config import BaseConfig
+from experiment_utils.printing import get_console
+from experiment_utils.logging import get_logger
 from experiment_utils.utils import format_path_with_env
 from torch.utils.data import DataLoader, Dataset
 
@@ -20,10 +21,18 @@ class ModalityConfig:
     """Configuration for a single modality's missing rate"""
 
     missing_rate: float = 0.0
+    apply_to: Optional[List[str]] = None
 
     def __post_init__(self):
         if not 0 <= self.missing_rate <= 1:
             raise ValueError(f"Missing rate must be between 0 and 1, got {self.missing_rate}")
+
+    def should_apply_to(self, pattern: str) -> bool:
+        """Check if the missing rate should be applied to the given pattern. Does not apply  by default"""
+        if self.apply_to is None:
+            return False
+
+        return pattern in self.apply_to
 
 
 @dataclass
@@ -31,7 +40,6 @@ class MissingPatternConfig:
     """Configuration for missing patterns"""
 
     modalities: Dict[str, ModalityConfig] = field(default_factory=OrderedDict)
-    force_binary: bool = False
     selected_patterns: Optional[List[str]] = None
 
     def __post_init__(self):
@@ -46,12 +54,19 @@ class MissingPatternConfig:
     def generate_patterns(self) -> Dict[str, Dict[str, float]]:
         """Generate all possible missing patterns"""
         base_mods = set(self.modalities.keys())
-        all_mods = base_mods | {"multimodal"}
+        all_mods = base_mods
 
         # Generate powerset excluding empty set
         mod_combinations = chain.from_iterable(combinations(base_mods, r) for r in range(1, len(base_mods) + 1))
 
+        mod_combinations = list(mod_combinations)
+        mod_combinations = sorted(mod_combinations, key=lambda x: (len(x), x))
+        full_combination = mod_combinations[-1]
+        full_combination = sorted(full_combination)
+        full_combination = "".join(m[0] for m in full_combination)
+
         patterns = {}
+
         for combo in mod_combinations:
             combo = sorted(combo)
             pattern_name = "".join(m[0] for m in combo)
@@ -59,14 +74,26 @@ class MissingPatternConfig:
             probs = {}
             for modality in all_mods:
                 if modality in combo:
-                    # Present modality - use configured missing rate
-                    rate = 0.0 if modality == "multimodal" else self.modalities[modality].missing_rate
-                    probs[modality] = 1.0 if self.force_binary else (1 - rate)
+                    ## if the modality is in the apply_to list, apply the missing rate from the config
+                    if self.modalities[modality].should_apply_to(pattern_name):
+                        rate = self.modalities[modality].missing_rate
+                        probs[modality] = round(1.0 - rate, 4)
+                    ## Do not apply the missing rate, 100% chance of being selected
+                    else:
+                        probs[modality] = 1.0
+                # Absent modality - always mask
                 else:
-                    # Absent modality - always mask
                     probs[modality] = 0.0
 
             patterns[pattern_name] = probs
+
+        # Add multimodal pattern
+        multimodal_probs = {}
+        for modality in all_mods:
+            rate = self.modalities[modality].missing_rate
+            multimodal_probs[modality] = round(1.0 - rate, 4)
+
+        patterns[full_combination] = multimodal_probs
 
         # Filter patterns if selected_patterns is specified
         if self.selected_patterns:
@@ -117,7 +144,6 @@ class DatasetConfig(BaseConfig):
             args.update(
                 {
                     "missing_patterns": self.missing_patterns.generate_patterns(),
-                    "force_binary": self.missing_patterns.force_binary,
                     "selected_patterns": self.missing_patterns.selected_patterns,
                 }
             )
@@ -267,10 +293,16 @@ class DataConfig(BaseConfig):
             console.print(f"[red]✗[/] {error_msg}")
             raise e
 
-    def build_all_dataloaders(self) -> Dict[str, DataLoader]:
+    def build_all_dataloaders(self, is_train: bool = True, is_test: bool = True) -> Dict[str, DataLoader]:
         """Build DataLoaders for all configured splits."""
         dataloaders = {}
         for split in self.datasets:
+            if (split == "train" or split == "validation") and not is_train:
+                continue
+
+            if split == "test" and not is_test:
+                continue
+
             try:
                 dataloaders[split] = self.build_dataloader(split)
             except Exception as e:

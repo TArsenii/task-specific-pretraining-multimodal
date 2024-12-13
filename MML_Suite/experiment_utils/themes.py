@@ -209,4 +209,4 @@ catppuccin = Theme(
     }
 )
 THEME = nord_theme
-WIDTH_SCALE = 0.9
+WIDTH_SCALE = 1.0

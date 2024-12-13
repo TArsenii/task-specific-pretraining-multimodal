@@ -4,7 +4,7 @@ from typing import Literal
 
 import torch
 import torch.nn as nn
-from experiment_utils import format_path_with_env
+from experiment_utils.utils import format_path_with_env
 from transformers import BertModel, BertTokenizer
 
 __all__ = ["BertTextEncoder"]

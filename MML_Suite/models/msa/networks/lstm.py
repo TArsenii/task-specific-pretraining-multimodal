@@ -1,4 +1,6 @@
+from typing import Literal
 import torch
+from torch import Tensor
 import torch.nn as nn
 import torch.nn.functional as F
 
@@ -6,7 +8,9 @@ import torch.nn.functional as F
 class LSTMEncoder(nn.Module):
     """one directional LSTM encoder"""
 
-    def __init__(self, input_size, hidden_size, embd_method="last"):
+    def __init__(
+        self, input_size: int, hidden_size: int, embd_method: Literal["last", "attention", "maxpool"] = "last"
+    ):
         super(LSTMEncoder, self).__init__()
         self.input_size = input_size
         self.hidden_size = hidden_size
@@ -39,18 +43,18 @@ class LSTMEncoder(nn.Module):
         sentence_vector = torch.sum(r_out * atten_weight, dim=1)  # [batch_size, hidden_size]
         return sentence_vector
 
-    def embd_maxpool(self, r_out, h_n):
+    def embd_maxpool(self, r_out, h_n) -> Tensor:
         # embd = self.maxpool(r_out.transpose(1,2))   # r_out.size()=>[batch_size, seq_len, hidden_size]
         # r_out.transpose(1, 2) => [batch_size, hidden_size, seq_len]
         in_feat = r_out.transpose(1, 2)
         embd = F.max_pool1d(in_feat, in_feat.size(2), in_feat.size(2))
         return embd.squeeze(-1)
 
-    def embd_last(self, r_out, h_n):
+    def embd_last(self, r_out, h_n) -> Tensor:
         # Just for  one layer and single direction
         return h_n.squeeze(0)
 
-    def forward(self, x):
+    def forward(self, x: Tensor) -> Tensor:
         """
         r_out shape: seq_len, batch, num_directions * hidden_size
         hn and hc shape: num_layers * num_directions, batch, hidden_size

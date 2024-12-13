@@ -4,7 +4,8 @@ from typing import Optional
 
 import numpy as np
 import torch
-from experiment_utils import get_console, get_logger
+from experiment_utils.printing import get_console
+from experiment_utils.logging import get_logger
 
 from .base_config import BaseConfig
 
@@ -109,7 +110,6 @@ class ExperimentConfig(BaseConfig):
         console.print(f"  Dry Run: {'Enabled' if self.dry_run else 'Disabled'}")
         if self.cross_validation:
             console.print(f"  Cross-Validation Folds: {self.cross_validation}")
-            
 
         if self.debug:
             console.print("\n[yellow]Warning: Debug mode is enabled[/]")
@@ -128,7 +128,6 @@ class ExperimentConfig(BaseConfig):
             "validation_print_interval_epochs": self.validation_print_interval_epochs,
             "dry_run": self.dry_run,
             "cross_validation": self.cross_validation,
-            
         }
 
     def __str__(self) -> str:

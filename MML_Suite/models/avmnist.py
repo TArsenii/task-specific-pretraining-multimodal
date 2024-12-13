@@ -1,13 +1,13 @@
 from collections import defaultdict
 from functools import partial
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Optional, Tuple, Union
 
 import numpy as np
 import torch
 from data.avmnist import AVMNIST as AVMNISTDataset
-from experiment_utils import get_console
 from experiment_utils.loss import LossFunctionGroup
 from experiment_utils.metric_recorder import MetricRecorder
+from experiment_utils.printing import get_console
 from experiment_utils.utils import safe_detach
 from modalities import Modality
 from models.conv import ConvBlock, ConvBlockArgs
@@ -26,7 +26,7 @@ from torch.nn.functional import softmax
 from torch.optim import Optimizer
 from torch.utils.data import DataLoader
 
-from .mixins import MultiModalMonitoringMixin
+from .mixins import MultimodalMonitoringMixin
 
 console = get_console()
 
@@ -173,7 +173,7 @@ class MNISTImage(Module):
         return str(self.net)
 
 
-class AVMNIST(Module, MultiModalMonitoringMixin):
+class AVMNIST(Module, MultimodalMonitoringMixin):
     """
     Multimodal model for the AVMNIST dataset, fusing audio and image encoders.
     """

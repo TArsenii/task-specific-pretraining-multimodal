@@ -66,7 +66,7 @@ class AttentionMonitoringMixin(MonitoringMixin):
         return data
 
 
-class MultiModalMonitoringMixin(MonitoringMixin):
+class MultimodalMonitoringMixin(MonitoringMixin):
     """Mixin for monitoring multi-modal models."""
 
     def get_monitoring_data(self) -> Dict[str, Any]:

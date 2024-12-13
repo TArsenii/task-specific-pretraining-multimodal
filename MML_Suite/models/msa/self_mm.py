@@ -7,14 +7,18 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from data import MOSI
-from experiment_utils import CenterManager, FeatureManager, LabelManager, get_console, get_logger, safe_detach
-from experiment_utils.logging import LoggerSingleton
-from experiment_utils.printing import EnhancedConsole
+from experiment_utils.logging import LoggerSingleton, get_logger
+from experiment_utils.managers import CenterManager, FeatureManager, LabelManager
+from experiment_utils.metric_recorder import MetricRecorder
+from experiment_utils.printing import EnhancedConsole, get_console
+from experiment_utils.utils import safe_detach
 from modalities import Modality
-from models.mixins import MultiModalMonitoringMixin
+from models.mixins import MultimodalMonitoringMixin
+from models.msa.networks.avsubset import AuViSubNet
+from models.msa.networks.bert_text_encoder import BertTextEncoder
+from models.protocols import MultimodalModelProtocol
 from torch import Tensor
-from torch.nn import LSTM, Dropout, Linear, Module
-from torch.nn.utils.rnn import pack_padded_sequence
+from torch.nn import Dropout, Linear, Module
 from torch.optim import Optimizer
 from torch.utils.data import DataLoader
 
@@ -23,13 +27,13 @@ console: EnhancedConsole = get_console()
 logger: LoggerSingleton = get_logger()
 
 
-class Self_MM(Module, MultiModalMonitoringMixin):
+class Self_MM(Module, MultimodalMonitoringMixin, MultimodalModelProtocol):
     def __init__(
         self,
-        audio_encoder: Module,
-        video_encoder: Module,
-        text_encoder: Module,
-        metric_recorder,
+        audio_encoder: AuViSubNet,
+        video_encoder: AuViSubNet,
+        text_encoder: BertTextEncoder,
+        metric_recorder: MetricRecorder,
         *,
         need_data_aligned: bool,
         audio_out: int,
@@ -119,6 +123,7 @@ class Self_MM(Module, MultiModalMonitoringMixin):
         A: Tensor,
         V: Tensor,
         T: Tensor,
+        *,
         is_embd_A: bool = False,
         is_embd_V: bool = False,
         is_embd_T: bool = False,
@@ -214,7 +219,7 @@ class Self_MM(Module, MultiModalMonitoringMixin):
         criterion: Module,  # Necessary for the main driver code, but not necessary within this function
         device: torch.device,
         epoch: int,  # TODO: Add this to the main driver code, kwargs when not necessary
-    ) -> Dict[str | Modality, Any]:
+    ) -> Dict[str, Any]:
         if epoch % self.update_every == 0:
             optimizer.zero_grad()
 
@@ -249,7 +254,7 @@ class Self_MM(Module, MultiModalMonitoringMixin):
         loss = 0.0
         for modality in [Modality.MULTIMODAL, Modality.AUDIO, Modality.VIDEO, Modality.TEXT]:
             if modality in outputs["predictions"]:
-                loss += self.weighted_loss(
+                loss += self._weighted_loss(
                     outputs["predictions"][modality],
                     self.labels_manager.get_labels(modality=modality, indexes=indexes),
                     indexes=indexes,
@@ -282,7 +287,7 @@ class Self_MM(Module, MultiModalMonitoringMixin):
 
         return {"loss": loss.item()}
 
-    def validation_step(self, batch, criterion, device, return_test_info: bool = False):
+    def validation_step(self, batch, criterion, device, return_test_info: bool = False) -> Dict[str, Any]:
         self.eval()
         if return_test_info:
             all_predictions = []
@@ -316,7 +321,7 @@ class Self_MM(Module, MultiModalMonitoringMixin):
         miss_types = np.array(miss_types)
 
         predictions = outputs["predictions"][Modality.MULTIMODAL]
-        loss = self.weighted_loss(predictions, labels)
+        loss = self._weighted_loss(predictions, labels)
 
         if return_test_info:
             all_predictions.append(safe_detach(predictions, to_np=True))
@@ -340,7 +345,7 @@ class Self_MM(Module, MultiModalMonitoringMixin):
 
         return {"loss": loss.item()}
 
-    def get_embeddings(self, dataloader: DataLoader, device: torch.device):
+    def get_embeddings(self, dataloader: DataLoader, device: torch.device) -> Dict[Modality, np.ndarray]:
         console = get_console()
         console.print("Getting embeddings...")
         console.start_task("Embeddings", len(dataloader))
@@ -392,9 +397,10 @@ class Self_MM(Module, MultiModalMonitoringMixin):
         console.print(
             f"Gathered {len(embeddings[Modality.AUDIO])} audio embeddings, {len(embeddings[Modality.VIDEO])} video embeddings and {len(embeddings[Modality.TEXT])} text embeddings"
         )
+        embeddings: Dict[Modality, np.ndaray] = {k: np.concatenate(v, axis=0) for k, v in embeddings.items()}
         return embeddings
 
-    def weighted_loss(self, y_pred, y_true, indexes=None, modality: Modality = Modality.MULTIMODAL):
+    def _weighted_loss(self, y_pred, y_true, indexes=None, modality: Modality = Modality.MULTIMODAL) -> Tensor:
         y_pred = y_pred.view(-1)
         y_true = y_true.view(-1)
         weighted = (
@@ -409,16 +415,16 @@ class Self_MM(Module, MultiModalMonitoringMixin):
         )
         return torch.mean(weighted * torch.abs(y_pred - y_true))
 
-    def _update_features(self, features, indexes):
+    def _update_features(self, features, indexes) -> None:
         self.feature_manager.update(features=features, indexes=indexes)
 
-    def _update_centers(self):
+    def _update_centers(self) -> None:
         for modality in [Modality.MULTIMODAL, Modality.AUDIO, Modality.VIDEO, Modality.TEXT]:
             labels = self.labels_manager[modality]
             self.center_manager.update(features=self.feature_manager.feature_maps, labels=labels)
 
-    def _update_labels(self, features, current_epoch, indexes):
-        def update_single_label(f, modality, delta_f, indexes):
+    def _update_labels(self, features, current_epoch, indexes) -> None:
+        def update_single_label(f, modality, delta_f, indexes) -> None:
             d_sp = torch.norm(f - self.center_manager.get_center(modality=modality, polarity="pos"), dim=-1)
             d_sn = torch.norm(f - self.center_manager.get_center(modality=modality, polarity="neg"), dim=-1)
             delta_s = (d_sn - d_sp) / (d_sp) + 1e-8
@@ -450,41 +456,3 @@ class Self_MM(Module, MultiModalMonitoringMixin):
         logger.info("Updated video labels")
         update_single_label(f=features[Modality.TEXT], modality=Modality.TEXT, delta_f=delta_f, indexes=indexes)
         logger.info("Updated text labels")
-
-
-class AuViSubNet(Module):
-    def __init__(
-        self,
-        in_size: int,
-        hidden_size: int,
-        out_size: int,
-        num_layers: int = 1,
-        dropout: float = 0.2,
-        bidirectional: bool = False,
-    ):
-        """
-        Args:
-            in_size: input dimension
-            hidden_size: hidden layer dimension
-            num_layers: specify the number of layers of LSTMs.
-            dropout: dropout probability
-            bidirectional: specify usage of bidirectional LSTM
-        Output:
-            (return value in forward) a tensor of shape (batch_size, out_size)
-        """
-        super(AuViSubNet, self).__init__()
-        self.rnn = LSTM(
-            in_size, hidden_size, num_layers=num_layers, dropout=dropout, bidirectional=bidirectional, batch_first=True
-        )
-        self.dropout = Dropout(dropout)
-        self.linear_1 = Linear(hidden_size, out_size)
-
-    def forward(self, x: Tensor, lengths: Tensor):
-        """
-        x: (batch_size, sequence_len, in_size)
-        """
-        packed_sequence = pack_padded_sequence(x, lengths.detach().cpu(), batch_first=True, enforce_sorted=False)
-        _, final_states = self.rnn(packed_sequence)
-        h = self.dropout(final_states[0].squeeze())
-        y_1 = self.linear_1(h)
-        return y_1

@@ -1,15 +1,14 @@
-import random
 from functools import lru_cache
 from os import PathLike
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional, Tuple
+from typing import Any, Dict, List, Literal, Optional
 
 import numpy as np
 import pandas as pd
 import torch
 from data.base_dataset import MultimodalBaseDataset
 from data.pattern import PatternSpecificDataset
-from experiment_utils import get_logger
+from experiment_utils.logging import get_logger
 from matplotlib import cm
 from modalities import Modality
 from PIL import Image
@@ -148,7 +147,6 @@ class AVMNIST(MultimodalBaseDataset):
             return self.num_samples
         else:
             return self.num_samples * len(self.selected_patterns)
-
 
     @lru_cache(maxsize=1000)
     def _load_audio(self, path: str) -> torch.Tensor:

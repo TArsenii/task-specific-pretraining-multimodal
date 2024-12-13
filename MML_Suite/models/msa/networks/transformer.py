@@ -1,8 +1,9 @@
 from collections import OrderedDict
+from typing import Tuple
 
 import torch
 import torch.nn.functional as F
-from torch import nn
+from torch import Tensor, nn
 
 #######################################################
 
@@ -10,19 +11,19 @@ from torch import nn
 class LayerNorm(nn.LayerNorm):
     """Subclass torch's LayerNorm to handle fp16."""
 
-    def forward(self, x: torch.Tensor):
+    def forward(self, x: Tensor):
         orig_type = x.dtype
         ret = super().forward(x.type(torch.float32))
         return ret.type(orig_type)
 
 
 class QuickGELU(nn.Module):
-    def forward(self, x: torch.Tensor):
+    def forward(self, x: Tensor):
         return x * torch.sigmoid(1.702 * x)
 
 
 class ResidualAttentionBlock(nn.Module):
-    def __init__(self, d_model: int, n_head: int, attn_mask: torch.Tensor = None):
+    def __init__(self, d_model: int, n_head: int, attn_mask: Tensor = None):
         super().__init__()
 
         self.attn = nn.MultiheadAttention(d_model, n_head, dropout=0.2, batch_first=True)
@@ -45,11 +46,11 @@ class ResidualAttentionBlock(nn.Module):
 
         self.dropout = nn.Dropout(p=0.1)
 
-    def attention(self, x: torch.Tensor):
+    def attention(self, x: Tensor):
         self.attn_mask = self.attn_mask.to(dtype=x.dtype, device=x.device) if self.attn_mask is not None else None
         return self.attn(x, x, x, need_weights=False, attn_mask=self.attn_mask)[0]
 
-    def forward(self, x: torch.Tensor):
+    def forward(self, x: Tensor) -> Tensor:
         # x = x + self.dropout(self.attention(self.ln_1(x)))
         # x = x + self.dropout(self.mlp(self.ln_2(x)))
 
@@ -68,22 +69,22 @@ class Transformer(nn.Module):
         layers: int,
         heads: int,
         embd_width: int,
-        attn_mask: torch.Tensor = None,
-    ):
-        super().__init__()
+        attn_mask: Tensor = None,
+    ) -> None:
+        super(Transformer, self).__init__()
         self.width = width
         self.layers = layers
         self.embd_width = embd_width
         self.resblocks = nn.Sequential(*[ResidualAttentionBlock(embd_width, heads, attn_mask) for _ in range(layers)])
         self.proj = nn.Linear(width, embd_width)
 
-        self.attention_vector_weight = nn.Parameter(torch.Tensor(self.embd_width, 1))
+        self.attention_vector_weight = nn.Parameter(Tensor(self.embd_width, 1))
         self.attention_layer = nn.Sequential(nn.Linear(self.embd_width, self.embd_width), nn.Tanh())
         self.softmax = nn.Softmax(dim=-1)
 
         self.muvar = nn.Linear(self.embd_width, self.embd_width * 2)
 
-    def embd_attention(self, x):
+    def embd_attention(self, x) -> Tensor:
         """'
         参考这篇博客的实现:
         https://blog.csdn.net/dendi_hust/article/details/94435919
@@ -100,21 +101,21 @@ class Transformer(nn.Module):
         sentence_vector = torch.sum(x * atten_weight, dim=1)  # [batch_size, hidden_size]
         return sentence_vector
 
-    def embd_maxpool(self, x):
+    def embd_maxpool(self, x) -> Tensor:
         # embd = self.maxpool(x.transpose(1,2))   # x.size()=>[batch_size, seq_len, hidden_size]
         # x.transpose(1, 2) => [batch_size, hidden_size, seq_len]
         in_feat = x.transpose(1, 2)
         embd = F.max_pool1d(in_feat, in_feat.size(2), in_feat.size(2))
         return embd.squeeze(-1)
 
-    def embd_avgpool(self, x):
+    def embd_avgpool(self, x) -> Tensor:
         # embd = self.maxpool(x.transpose(1,2))   # x.size()=>[batch_size, seq_len, hidden_size]
         # x.transpose(1, 2) => [batch_size, hidden_size, seq_len]
         in_feat = x.transpose(1, 2)
         embd = F.avg_pool1d(in_feat, in_feat.size(2), in_feat.size(2))
         return embd.squeeze(-1)
 
-    def initialize_parameters(self):
+    def initialize_parameters(self) -> None:
         proj_std = (self.embd_width**-0.5) * ((2 * self.layers) ** -0.5)
         attn_std = self.embd_width**-0.5
         fc_std = (2 * self.embd_width) ** -0.5
@@ -124,17 +125,17 @@ class Transformer(nn.Module):
             nn.init.normal_(block.mlp.c_fc.weight, std=fc_std)
             nn.init.normal_(block.mlp.c_proj.weight, std=proj_std)
 
-    def reparameterize(self, mu, log_var):
+    def reparameterize(self, mu: Tensor, log_var: Tensor) -> Tensor:
         """
         :param mu: mean from the encoder's latent space
         :param log_var: log variance from the encoder's latent space
         """
-        std = torch.exp(0.5 * log_var)  # standard deviation
-        eps = torch.randn_like(std)  # `randn_like` as we need the same size
+        std: Tensor = torch.exp(0.5 * log_var)  # standard deviation
+        eps: Tensor = torch.randn_like(std)  # `randn_like` as we need the same size
         sample = mu + (eps * std)  # sampling as if coming from the input space
         return sample
 
-    def forward(self, x: torch.Tensor):
+    def forward(self, x: Tensor) -> Tuple[Tensor, Tensor, Tensor]:
         x = self.proj(x)
         x = self.resblocks(x)
         x = self.embd_avgpool(x)
@@ -142,8 +143,8 @@ class Transformer(nn.Module):
         # return z
         x = self.muvar(x).view(-1, 2, self.embd_width)
         # get `mu` and `log_var`
-        mu = x[:, 0, :]  # the first feature values as mean
-        log_var = x[:, 1, :]  # the other feature values as variance
+        mu: Tensor = x[:, 0, :]  # the first feature values as mean
+        log_var: Tensor = x[:, 1, :]  # the other feature values as variance
         # get the latent vector through reparameterization
         z = self.reparameterize(mu, log_var)
         # z = torch.sigmoid(z)
@@ -157,7 +158,7 @@ class Transformer2(nn.Module):
         layers: int,
         heads: int,
         embd_width: int,
-        attn_mask: torch.Tensor = None,
+        attn_mask: Tensor = None,
     ):
         super().__init__()
         self.width = width
@@ -166,7 +167,7 @@ class Transformer2(nn.Module):
         self.resblocks = nn.Sequential(*[ResidualAttentionBlock(embd_width, heads, attn_mask) for _ in range(layers)])
         self.proj = nn.Linear(width, embd_width)
 
-        self.attention_vector_weight = nn.Parameter(torch.Tensor(self.embd_width, 1))
+        self.attention_vector_weight = nn.Parameter(Tensor(self.embd_width, 1))
         self.attention_layer = nn.Sequential(nn.Linear(self.embd_width, self.embd_width), nn.Tanh())
         self.softmax = nn.Softmax(dim=-1)
 
@@ -223,7 +224,7 @@ class Transformer2(nn.Module):
         sample = mu + (eps * std)  # sampling as if coming from the input space
         return sample
 
-    def forward(self, x: torch.Tensor):
+    def forward(self, x: Tensor):
         x = self.proj(x)
         x = self.resblocks(x)
         x = self.embd_avgpool(x)

@@ -1,10 +1,11 @@
 from typing import Dict, Optional
 
 import torch
-from experiment_utils import get_console, safe_detach
+from experiment_utils.printing import EnhancedConsole, get_console
+from experiment_utils.utils import safe_detach
 from modalities import Modality
 
-console = get_console()
+console: EnhancedConsole = get_console()
 
 
 class FeatureManager:

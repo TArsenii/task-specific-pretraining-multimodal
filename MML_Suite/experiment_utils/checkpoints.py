@@ -67,7 +67,13 @@ class CheckpointManager:
             console.print(f"[green]✓[/] New best model saved (epoch {epoch})")
 
         # Update best metric if needed
-        metric_value = metrics[self.save_metric]
+        try:
+            metric_value = metrics[self.save_metric]
+        except KeyError as ke:
+            error_msg = f"Error saving checkpoint: metric '{self.save_metric}' not found in metrics. Available metrics: {metrics.keys()}"
+            logger.error(error_msg)
+            console.print(f"[red]✗[/] {error_msg}")
+            raise ke
         if self.is_better(metric_value):
             self.best_metric = metric_value
             self.best_epoch = epoch
@@ -84,7 +90,7 @@ class CheckpointManager:
         try:
             if load_best:
                 checkpoint_path = self.model_dir / "best.pth"
-                console.print(f" [cyan]Loading best checkpoint ({checkpoint_path}) ...[/]")
+                console.print(f" [cyan]Loading best checkpoint (Epoch {self.best_epoch}): ({checkpoint_path}) ...[/]")
             elif epoch is not None:
                 checkpoint_path = self.model_dir / f"epoch_{epoch}.pth"
                 console.print(f"[cyan]Loading checkpoint from epoch {epoch}...[/]")

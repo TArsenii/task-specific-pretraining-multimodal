@@ -8,10 +8,11 @@ import torch
 from data.base_dataset import MultimodalBaseDataset
 from experiment_utils.logging import get_logger
 from experiment_utils.utils import hdf5_to_dict
-from modalities import Modality
+from modalities import Modality, add_modality
 from torch import Tensor
 
 logger = get_logger()
+add_modality("video")
 
 
 class IEMOCAP(MultimodalBaseDataset):

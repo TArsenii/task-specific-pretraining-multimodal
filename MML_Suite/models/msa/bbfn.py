@@ -1,8 +1,8 @@
-from models.mixins import MultiModalMonitoringMixin
+from models.mixins import MultimodalMonitoringMixin
 from torch.nn import Module
 
 
-class BBFN(Module, MultiModalMonitoringMixin):
+class BBFN(Module, MultimodalMonitoringMixin):
     def __init__(self):
         super(BBFN, self).__init__()
 

@@ -1,3 +1,4 @@
+from typing import List
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -9,12 +10,12 @@ console = get_console()
 class TextCNN(nn.Module):
     def __init__(
         self,
-        input_size,
-        embd_size=128,
-        in_channels=1,
-        out_channels=128,
-        kernel_heights: list[int] = [3, 4, 5],
-        dropout=0.5,
+        input_size: int,
+        embd_size: int = 128,
+        in_channels: int = 1,
+        out_channels: int = 128,
+        kernel_heights: List[int] = [3, 4, 5],
+        dropout: float = 0.5,
     ) -> None:  # 3,4,5
         super().__init__()
         """

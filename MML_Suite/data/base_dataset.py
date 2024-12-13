@@ -1,9 +1,14 @@
 import random
-from itertools import Dict, combinations
-from typing import Any, Callable, List, Literal, Optional, Tuple
+from itertools import combinations
+from typing import Any, Callable, Dict, List, Literal, Optional, Tuple
 
-from modalities import Modality
+import torch
+
+from experiment_utils.printing import get_console
+from modalities import Modality, create_missing_mask
 from torch.utils.data import Dataset
+
+console = get_console()
 
 
 class MultimodalBaseDataset(Dataset):
@@ -24,14 +29,14 @@ class MultimodalBaseDataset(Dataset):
             self.selected_patterns = self.validate_patterns(selected_patterns)
         else:
             self.selected_patterns = self.get_all_possible_patterns()
-        if "m" in self.missing_patterns:
-            full_condition = "".join([k for k in self.AVAILABLE_MODALITIES.keys()])
-            self.missing_patterns[full_condition] = self.missing_patterns["m"]
-            del self.missing_patterns["m"]
+        # if "m" in self.missing_patterns:
+        #     full_condition = "".join([k for k in self.AVAILABLE_MODALITIES.keys()])
+        #     self.missing_patterns[full_condition] = self.missing_patterns["m"]
+        #     del self.missing_patterns["m"]
         self.pattern_indices = None
 
     def get_sample_and_apply_mask(
-        self, pattern: str, sample, modality_loaders: Dict[str, Tuple[Callable, Modality]]
+        self, patterns: Dict[str, float], sample, modality_loaders: Dict[str, Tuple[Callable, Modality]]
     ) -> Dict[str, Any]:
         """Load data for each modality and apply masking."""
         for mod_name, (loader_fn, mod_enum) in modality_loaders.items():
@@ -40,11 +45,12 @@ class MultimodalBaseDataset(Dataset):
                 data = loader_fn()
 
                 # Apply masking
-                if mod_name in pattern:
-                    prob = pattern[mod_name]
-                    mask = float(random.random() < prob) if self.split == "train" else prob
+                if mod_name in patterns:
+                    prob = patterns[mod_name]
+                    mask = prob  ## TODO: change this to create_missing_mask(1, data.shape[0], pct_missing) and utilise the ModalityConfig missing rates
+                    # mask = create_missing_mask(1, data.shape[0], prob)
                 else:
-                    mask = 0.0
+                    mask = torch.ones_like(data)
 
                 sample[f"{str(mod_enum)}_original"] = data * mask
                 sample[mod_enum] = data * mask
@@ -64,7 +70,8 @@ class MultimodalBaseDataset(Dataset):
             Tuple[str, int]: Tuple containing the pattern name and sample index.
         """
         if self.split == "train":
-            return random.choice(self.selected_patterns), idx
+            mp = random.choice(self.selected_patterns)
+            return mp, idx
         else:
             pattern_idx = idx // self.num_samples
             sample_idx = idx % self.num_samples

@@ -5,7 +5,7 @@ import re
 from collections import OrderedDict, defaultdict
 from functools import partial
 from os import PathLike
-from typing import Any, Callable, DefaultDict, Dict, List, Optional, Set, Tuple, Union
+from typing import Any, Callable, DefaultDict, Dict, List, Optional, Tuple
 
 import numpy as np
 from config.metric_config import MetricConfig
@@ -81,7 +81,7 @@ class MetricRecorder:
         self.modality_data: DefaultDict[Any, List[Tuple[ndarray, ndarray]]] = defaultdict(list)
         self.current_results: Dict[str, float] = {}
         self.tensorboard_path = tensorboard_path
-
+        self.writer = None
         if self.tensorboard_path:
             try:
                 from torch.utils.tensorboard import SummaryWriter
@@ -150,27 +150,29 @@ class MetricRecorder:
         if predictions.shape != targets.shape:
             raise ValueError(f"Shape mismatch between predictions {predictions.shape} and " f"targets {targets.shape}")
 
-        self.modality_data[modality].append((predictions, targets))
+        self.modality_data[str(modality)].append((predictions, targets))
 
-    def update_all(self, predictions: Tensor | ndarray, targets: Tensor | ndarray, m_types: Set[str]) -> None:
+    def update_all(self, predictions: Tensor | ndarray, targets: Tensor | ndarray, m_types: List[str]) -> None:
         """
         Store predictions and targets for later metric calculation. Applies the mask here instead of in the model code.
 
         """
-        if not isinstance(m_types, set):
-            try:
-                m_types = set(m_types)
-            except Exception as e:
-                raise TypeError(f"m_types must be a set or set-like object: {str(e)}")
 
-        for m_type in m_types:
+        m_types = np.array(m_types)
+        unique_types = np.unique(m_types)
+
+        for m_type in unique_types:
             mask = m_types == m_type
             mask_preds = predictions[mask]
             mask_labels = targets[mask]
             self.update(predictions=mask_preds, targets=mask_labels, modality=m_type)
 
     def calculate_metrics(
-        self, metric_group: Optional[str] = None, epoch: Optional[int] = None, loss: Optional[float] = None
+        self,
+        metric_group: Optional[str] = None,
+        epoch: Optional[int] = None,
+        loss: Optional[float] = None,
+        skip_tensorboard: bool = False,
     ) -> Dict[str, float]:
         """
         Calculate all metrics using stored predictions and targets.
@@ -210,9 +212,11 @@ class MetricRecorder:
                     console.print(f"[red]Error calculating metric {metric_name}: {str(e)}")
                     logger.error(f"Metric calculation error - {metric_name}: {str(e)}")
 
-        if self.writer:
+        if hasattr(self, "writer") and self.writer and not skip_tensorboard:
             logger.debug(f"Writer is not None {self.tensorboard_path}")
             for metric_name, value in results.items():
+                if "loss" in metric_name:
+                    continue
                 ## want to match the metric name with the tb_record_only list using regex
                 if self.tb_record_only:
                     for pattern in self.tb_record_only:

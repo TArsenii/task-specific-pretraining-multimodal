@@ -97,7 +97,6 @@ data: !DataConfig
           image: !ModalityConfig
             missing_rate: 0.0
         selected_patterns: ["ai"]
-        force_binary: false
     validation: !DatasetConfig
       dataset: "AVMNIST"
       data_fp: "$EXP_PATH/DATA/avmnist/validation_subset.csv"
@@ -112,7 +111,6 @@ data: !DataConfig
           image: !ModalityConfig
             missing_rate: 0.0
         selected_patterns: ["a"]
-        force_binary: false
     test: !DatasetConfig
       dataset: "AVMNIST"
       data_fp: "$EXP_PATH/DATA/avmnist/test_subset.csv"
@@ -127,7 +125,6 @@ data: !DataConfig
           image: !ModalityConfig
             missing_rate: 0.0
         selected_patterns: ["a"]
-        force_binary: false
 
 metrics:
   metrics:

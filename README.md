@@ -66,7 +66,6 @@ data:
             missing_rate: 0.2
           modality2:
             missing_rate: 0.3
-        force_binary: false
         selected_patterns: ["m1", "m2"]
 
 model:

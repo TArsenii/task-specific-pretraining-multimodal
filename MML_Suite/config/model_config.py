@@ -1,9 +1,10 @@
 import importlib
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Literal, Optional
 
-from experiment_utils import get_console, get_logger
+from experiment_utils.printing import get_console
+from experiment_utils.logging import get_logger
 from rich.table import Table
 
 from .base_config import BaseConfig
@@ -22,12 +23,14 @@ class ModelConfig(BaseConfig):
     name: str
     model_type: str
     pretrained_path: Optional[str] = None
+    init_fn: Optional[Literal["xavier", "kaiming", "orthogonal"]] = None
     kwargs: Dict[str, Any] = field(default_factory=dict)
     version: str = field(default="1.0.0")
 
     def __post_init__(self):
         """Initialize and validate the model configuration."""
         console.rule(f"[heading]Initializing Model Configuration: {self.name}[/]")
+
         self._display_config()
 
     def validate_config(self) -> None:
@@ -98,6 +101,7 @@ class ModelConfig(BaseConfig):
             name = data.pop("name")
             model_type = data.pop("model_type")
             pretrained_path = data.pop("pretrained_path", None)
+            init_fn = data.pop("init_fn", None)
             version = data.pop("version", "1.0.0")
 
             # All remaining fields go to kwargs
@@ -107,6 +111,7 @@ class ModelConfig(BaseConfig):
                 name=name,
                 model_type=model_type,
                 pretrained_path=pretrained_path,
+                init_fn=init_fn,
                 kwargs=kwargs,
                 version=version,
             )
@@ -126,6 +131,7 @@ class ModelConfig(BaseConfig):
         base_dict = {
             "name": self.name,
             "model_type": self.model_type,
+            "init_fn": self.init_fn,
             "version": self.version,
         }
 

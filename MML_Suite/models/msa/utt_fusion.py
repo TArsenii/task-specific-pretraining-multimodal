@@ -6,7 +6,8 @@ import torch
 from experiment_utils.loss import LossFunctionGroup
 from experiment_utils.metric_recorder import MetricRecorder
 from experiment_utils.printing import get_console
-from experiment_utils.utils import safe_detach
+from experiment_utils.utils import SafeDict, format_path_with_env, safe_detach
+from experiment_utils.global_state import get_current_exp_name, get_current_run_id
 from modalities import Modality
 from models.msa.networks.classifier import FcClassifier
 from models.msa.networks.lstm import LSTMEncoder
@@ -14,11 +15,13 @@ from models.msa.networks.textcnn import TextCNN
 from torch.nn import Module
 from torch.optim import Optimizer
 from torch.utils.data import DataLoader
+from models.mixins import MultimodalMonitoringMixin
+from models.protocols import MultimodalModelProtocol
 
 console = get_console()
 
 
-class UttFusionModel(Module):
+class UttFusionModel(Module, MultimodalMonitoringMixin, MultimodalModelProtocol):
     """
     Fusion model for multimodal sentiment analysis using LSTM and TextCNN encoders
     with a fully connected classifier for prediction.
@@ -54,9 +57,25 @@ class UttFusionModel(Module):
         self.netT = netT
         self.netC = netC
         self.clip = clip
+        self.pretrained_path = pretrained_path
 
-        if pretrained_path:
-            self.load_state_dict(torch.load(pretrained_path, weights_only=True))
+    def load_pretrained(self) -> None:
+        """
+        Load pretrained weights into the model.
+        """
+
+        if self.pretrained_path is not None:
+            self.pretrained_path = format_path_with_env(self.pretrained_path)
+            self.pretrained_path = self.pretrained_path.format_map(
+                SafeDict(run_id=get_current_run_id(), exp_name=get_current_exp_name())
+            )
+
+            console.print(f"Loading pretrained weights from {self.pretrained_path}")
+            state_dict = torch.load(self.pretrained_path, map_location="cpu", weights_only=True)
+            self.load_state_dict(state_dict=state_dict["model_state_dict"])
+        else:
+            console.print("[bold red] WARNING: No pretrained weights loaded.[/]")
+            raise ValueError("No pretrained weights loaded.")
 
     def get_encoder(self, modality: Modality | str) -> Module:
         """
@@ -132,9 +151,10 @@ class UttFusionModel(Module):
         self,
         batch: Dict[str, Any],
         optimizer: Optimizer,
-        criterion: LossFunctionGroup,
+        loss_functions: LossFunctionGroup,
         device: torch.device,
         metric_recorder: MetricRecorder,
+        **kwargs: Any,
     ) -> Dict[str, Any]:
         """
         Perform a single training step.
@@ -142,7 +162,7 @@ class UttFusionModel(Module):
         Args:
             batch (Dict[str, Any]): Batch of input data and labels.
             optimizer (Optimizer): Optimizer for the model.
-            criterion (LossFunctionGroup): Loss function group.
+            loss_functions (LossFunctionGroup): Loss function group.
             device (torch.device): Computation device.
             metric_recorder (MetricRecorder): Metric recorder for evaluation.
 
@@ -161,7 +181,7 @@ class UttFusionModel(Module):
         logits = self.forward(A, V, T)
 
         optimizer.zero_grad()
-        loss = criterion(logits.squeeze(), labels.squeeze())
+        loss = loss_functions(None, logits.squeeze(), labels.squeeze())
         loss.backward()
 
         if self.clip is not None:
@@ -177,17 +197,18 @@ class UttFusionModel(Module):
     def validation_step(
         self,
         batch: Dict[str, Any],
-        criterion: LossFunctionGroup,
+        loss_functions: LossFunctionGroup,
         device: torch.device,
         metric_recorder: MetricRecorder,
         return_test_info: bool = False,
+        **kwargs: Any,
     ) -> Dict[str, Any]:
         """
         Perform a single validation step.
 
         Args:
             batch (Dict[str, Any]): Batch of input data and labels.
-            criterion (LossFunctionGroup): Loss function group.
+            loss_functions (LossFunctionGroup): Loss function group.
             device (torch.device): Computation device.
             metric_recorder (MetricRecorder): Metric recorder for evaluation.
             return_test_info (bool): Whether to return detailed test information.
@@ -209,19 +230,19 @@ class UttFusionModel(Module):
             )
 
             logits = self.forward(A, V, T)
-            predictions = logits.argmax(dim=-1)
+
+            miss_types = np.array(miss_type)
+
+            loss = loss_functions(None, logits.squeeze(), labels)
+            predictions = safe_detach(logits.argmax(dim=-1).squeeze())
+            labels = safe_detach(labels.squeeze())
+
+            metric_recorder.update_all(predictions=predictions, targets=labels, m_types=miss_types)
 
             if return_test_info:
                 all_predictions.append(predictions.cpu().numpy())
                 all_labels.append(labels.cpu().numpy())
                 all_miss_types.append(miss_type)
-
-            labels = safe_detach(labels.squeeze())
-            predictions = safe_detach(predictions.squeeze())
-            miss_types = np.array(miss_type)
-
-            loss = criterion(logits.squeeze(), labels)
-            metric_recorder.update_all(predictions=predictions, targets=labels, m_types=miss_types)
 
         self.train()
 
@@ -261,5 +282,7 @@ class UttFusionModel(Module):
                 for mod, embd in zip([Modality.AUDIO, Modality.VIDEO, Modality.TEXT], [a_embd, v_embd, t_embd]):
                     if embd is not None:
                         embeddings[mod].append(safe_detach(embd))
+
+        embeddings: Dict[Modality, np.ndarray] = {mod: np.concatenate(embds) for mod, embds in embeddings.items()}
 
         return embeddings

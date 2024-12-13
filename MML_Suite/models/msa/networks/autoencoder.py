@@ -1,7 +1,10 @@
 import copy
+from typing import Any, List, Tuple
 
 import torch
 import torch.nn as nn
+
+from torch import Tensor
 
 
 class ResidualAE(nn.Module):
@@ -13,7 +16,7 @@ class ResidualAE(nn.Module):
     """
 
     def __init__(
-        self, layers: list[int], n_blocks: int, input_dim: int, *, dropout: float = 0.5, use_bn: bool = False
+        self, layers: List[int], n_blocks: int, input_dim: int, *, dropout: float = 0.5, use_bn: bool = False
     ) -> None:
         super(ResidualAE, self).__init__()
         self._layers = layers
@@ -26,7 +29,7 @@ class ResidualAE(nn.Module):
             setattr(self, "encoder_" + str(i), self.get_encoder(layers))
             setattr(self, "decoder_" + str(i), self.get_decoder(layers))
 
-    def get_encoder(self, layers):
+    def get_encoder(self, layers) -> nn.Sequential:
         all_layers = []
         input_dim = self.input_dim
         for i in range(0, len(layers)):
@@ -42,7 +45,7 @@ class ResidualAE(nn.Module):
         all_layers = all_layers[:-decline_num]
         return nn.Sequential(*all_layers)
 
-    def get_decoder(self, layers):
+    def get_decoder(self, layers) -> nn.Sequential:
         all_layers = []
         decoder_layer = copy.deepcopy(layers)
         decoder_layer.reverse()
@@ -58,7 +61,7 @@ class ResidualAE(nn.Module):
         all_layers.append(nn.Linear(decoder_layer[-2], decoder_layer[-1]))
         return nn.Sequential(*all_layers)
 
-    def forward(self, x):
+    def forward(self, x) -> Tuple[Tensor, Tensor]:
         x_in = x
         x_out = x.clone().fill_(0)
         latents = []
@@ -70,7 +73,7 @@ class ResidualAE(nn.Module):
             x_out = decoder(latent)
             latents.append(latent)
         latents = torch.cat(latents, dim=-1)
-        return self.transition(x_in + x_out), latents
+        return self.transition.forward(x_in + x_out), latents
 
 
 class ResidualXE(nn.Module):
@@ -123,7 +126,7 @@ class ResidualXE(nn.Module):
         all_layers.append(nn.Linear(decoder_layer[-2], decoder_layer[-1]))
         return nn.Sequential(*all_layers)
 
-    def forward(self, x):
+    def forward(self, x) -> Tuple[Tensor, Tensor]:
         x_in = x
         x_out = x.clone().fill_(0)
         latents = []
@@ -135,7 +138,7 @@ class ResidualXE(nn.Module):
             x_out = decoder(latent)
             latents.append(latent)
         latents = torch.cat(latents, dim=-1)
-        return self.transition(x_in + x_out), latents
+        return self.transition.forward(x_in + x_out), latents
 
 
 class ResidualUnetAE(nn.Module):

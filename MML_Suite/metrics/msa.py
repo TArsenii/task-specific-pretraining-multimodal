@@ -2,26 +2,27 @@ import traceback
 from typing import Dict
 
 import numpy as np
-from sklearn.metrics import accuracy_score, f1_score
+from sklearn.metrics import accuracy_score, confusion_matrix, f1_score
 
 
 def msa_binarize(preds: np.ndarray, labels: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    test_preds = preds - 1
-    test_truth = labels - 1
+    binary_truth = (labels == 1).astype(int)  # 1 for Neutral, 0 otherwise
+    binary_preds = (preds == 1).astype(int)  # 1 for Neutral, 0 otherwise
 
-    non_zeros = np.array([i for i, e in enumerate(test_truth) if e != 0])
-    non_zeros_binary_truth = test_truth[non_zeros] > 0
-    non_zeros_binary_preds = test_preds[non_zeros] > 0
+    # Indices of Non-Neutral samples (Negative and Positive)
+    non_zero_indices = np.where(labels != 1)[0]
 
-    binary_truth = test_truth >= 0
-    binary_preds = test_preds >= 0
+    # For Non0 metrics, distinguish Positive (2) vs Negative (0)
+    # Here, Positive is 1, Negative is 0
+    non_zero_binary_truth = (labels[non_zero_indices] == 2).astype(int)  # 1 for Positive, 0 for Negative
+    non_zero_binary_preds = (preds[non_zero_indices] == 2).astype(int)  # 1 for Positive, 0 for Negative
 
     return (
         binary_preds,
         binary_truth,
-        non_zeros,
-        non_zeros_binary_preds,
-        non_zeros_binary_truth,
+        non_zero_indices,
+        non_zero_binary_preds,
+        non_zero_binary_truth,
     )
 
 
@@ -34,6 +35,10 @@ def __multiclass_acc(y_pred, y_true):
     :return: Classification accuracy
     """
     return np.sum(np.round(y_pred) == np.round(y_true)) / float(len(y_true))
+
+
+def confusion_matrix_from_logits(y_true: np.ndarray, y_pred: np.ndarray, **kwargs) -> np.ndarray:
+    return confusion_matrix(y_true, y_pred, **kwargs)
 
 
 def msa_binary_classification(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, float]:

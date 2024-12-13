@@ -1,6 +1,6 @@
 !StandardConfig
 experiment: !ExperimentConfig
-  name: "UTT_FUSION BASE MODEL MOSEI"
+  name: "MMIN BASE MODEL WITH PRETRAINED MOSEI"
   device: "cuda"
   train_print_interval_epochs: 1
   validation_print_interval_epochs: 1
@@ -8,8 +8,9 @@ experiment: !ExperimentConfig
   is_test: true
 
 model: !ModelConfig
-  name: "UTT-Fusion"
-  model_type: "UttFusionModel"
+  name: "MMIN"
+  model_type: "MMIN"
+  init_fn: "kaiming"
   
   netA: !LSTMEncoder
     input_size: 74
@@ -31,8 +32,17 @@ model: !ModelConfig
       - 3
       - 4
       - 5
-  netC: !FcClassifier
+
+  netAE: !ResidualAE
+    layers: 
+      - 160
+      - 80
+      - 32
+    n_blocks: 5
     input_dim: 192
+    
+  netC: !FcClassifier
+    input_dim: 160
     layers: 
       - 96
       - 48
@@ -40,11 +50,41 @@ model: !ModelConfig
     dropout: 0.66
     use_bn: true
 
+  pretrained_model: !UttFusionModel
+    pretrained_path: "$EXP_PATH/experiments_output/UTT_FUSION_BASE_MODEL_MOSEI/models/{run_id}/best.pth"
+    netA: !LSTMEncoder
+      input_size: 74
+      hidden_size: 64
+      embd_method: "maxpool"
+
+    netV: !LSTMEncoder
+      input_size: 35
+      hidden_size: 64
+      embd_method: "maxpool"
+
+    netT: !TextCNN
+      input_size: 768
+      embd_size: 64
+      dropout: 0.7
+      in_channels: 1
+      out_channels: 128
+      kernel_heights: 
+        - 3
+        - 4
+        - 5
+    netC: !FcClassifier
+      input_dim: 192
+      layers: 
+        - 96
+        - 48
+      output_dim: 3
+      dropout: 0.66
+      use_bn: true
   clip: 1.0
 
 
 training:
-  epochs: 20
+  epochs: 30
   batch_size: 256 
   early_stopping: false
   early_stopping_patience: 15
@@ -55,15 +95,25 @@ training:
     default_kwargs:
       lr: 2e-4
       weight_decay: 0.00001
+      betas: [0.9, 0.999]
   loss_functions: !LossFunctionGroup
     cross_entropy: 
       loss_name: "cross_entropy"
       loss_args: {}
       weight: 1.0
+    mse: 
+      loss_name: "mse"
+      loss_args: {}
+      weight: 4.0
+    cycle: 
+      loss_name: "cycle"
+      loss_args: {}
+      weight: 2.0
 
   scheduler: "lambda"
   scheduler_args:
-    lr_lambda: "lambda epoch: 1.0 - max(0, epoch + epoch_count - niter) / float(niter_decay + 1)"
+    lr_lambda: "max(min_lr, (1.0 - max(0, epoch + epoch_count - niter) / float(niter_decay + 1)))"
+    min_lr: 0.000001 # 1e-6
     epoch_count: 1
     niter: 10
     niter_decay: 10
@@ -79,12 +129,12 @@ data: !DataConfig
       missing_patterns: !MissingPatternConfig
         modalities:
           audio: !ModalityConfig
-            missing_rate: 0.0  # Audio is ALWAYS present when included in pattern
+            missing_rate: 0.8  # Audio is ALWAYS present when included in pattern
           video: !ModalityConfig
-            missing_rate: 0.0  # Video is ALWAYS present when included in pattern
+            missing_rate: 0.5  # Video is ALWAYS present when included in pattern
           text: !ModalityConfig 
-            missing_rate: 0.0  # Text is ALWAYS present when included in pattern
-        selected_patterns: ["avt"]  # Only use these combinations of modalities
+            missing_rate: 0.2  # Text is ALWAYS present when included in pattern
+        selected_patterns: ["avt", "a", "v", "t", "av", "at", "vt"] ## one of these will be selected randomly for each item during training
       kwargs:
         labels_key: "classification_labels"
         aligned: true
@@ -180,6 +230,7 @@ metrics:
       kwargs:
         average: "micro"
         zero_division: 0
+      
       level: "epoch"
     Precision_Macro:
       function: "sklearn.metrics.precision_score"

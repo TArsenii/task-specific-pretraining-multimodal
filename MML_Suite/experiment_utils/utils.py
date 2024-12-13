@@ -8,11 +8,13 @@ import torch
 from modalities import Modality
 from numpy import ndarray
 from torch import Tensor
-from torch.nn import BatchNorm2d, Conv2d, Linear, init
+from torch.nn import BatchNorm2d, Conv2d, Linear, Module, init
 
 from .printing import get_console
 
 console = get_console()
+
+PARAMETER_SIZE_BYTES: int = 4  # Size of a float parameter in bytes
 
 
 def hdf5_to_dict(f: h5py.File) -> Dict[str, Any]:
@@ -25,10 +27,7 @@ def hdf5_to_dict(f: h5py.File) -> Dict[str, Any]:
     Returns:
     - Dict[str, Any]: Dictionary containing the contents of the HDF5 file.
     """
-    return {
-        k: f[k][()] for k in f.keys()
-    }
-    
+    return {k: f[k][()] for k in f.keys()}
 
 
 def format_path_with_env(path_template, **kwargs):
@@ -80,7 +79,7 @@ def to_gpu_safe(x: Tensor | Dict[str | Modality, Tensor | Any]) -> Tensor | Dict
     return {k: v.to(device) if isinstance(v, Tensor) else v for k, v in x.items()}
 
 
-def kaiming_init(module):
+def kaiming_init(module: Module) -> None:
     if isinstance(module, (Conv2d, Linear)):
         init.kaiming_normal_(module.weight, mode="fan_out", nonlinearity="relu")
         if module.bias is not None:
@@ -120,6 +119,8 @@ def clean_checkpoints(
     last_checkpoint = None
 
     epoch_pattern = re.compile(r"epoch_(\d+)\.pth$")
+    if len(checkpoints) == 0:
+        return None
     console.print(f"Cleaning checkpoints in {checkpoints_dir}...")
     for checkpoint in sorted(checkpoints, key=lambda x: os.path.getmtime(os.path.join(checkpoints_dir, x))):
         checkpoint_path = os.path.join(checkpoints_dir, checkpoint)

@@ -5,8 +5,11 @@
 **/DATA
 
 # Experiment Outputs
-**experiment_output/
+**experiments_output/
 *.ipynb
+
+# vscode
+.vscode
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

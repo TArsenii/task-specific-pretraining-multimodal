@@ -1,40 +1,26 @@
 import yaml
-from config import (
-    AssociationNetworkConfig,
-    CMAMConfig,
-    DataConfig,
-    DatasetConfig,
-    ExperimentConfig,
-    LoggingConfig,
-    MetricConfig,
-    MissingPatternConfig,
-    ModalityConfig,
-    ModelConfig,
-    OptimizerConfig,
-    ParameterGroupConfig,
-    StandardMultimodalConfig,
-)
-from experiment_utils import get_logger
+from config.data_config import DataConfig, DatasetConfig, ModalityConfig, MissingPatternConfig
+from config.experiment_config import ExperimentConfig
+from config.logging_config import LoggingConfig
+from config.metric_config import MetricConfig
+from config.model_config import ModelConfig
+from config.multimodal_training_config import StandardMultimodalConfig
+from config.optimizer_config import OptimizerConfig, ParameterGroupConfig
+from experiment_utils.logging import get_logger
 from experiment_utils.loss import LossFunctionGroup
 from experiment_utils.managers import CenterManager, FeatureManager, LabelManager
 from modalities import add_modality
-from models import (
-    CMAM,
-    AuViSubNet,
-    BertTextEncoder,
-    ConvBlockArgs,
-    FcClassifier,
-    InputEncoders,
-    LSTMEncoder,
-    MNISTAudio,
-    MNISTImage,
-    ResidualAE,
-    Self_MM,
-    TextCNN,
-    UttFusionModel,
-    MMIMDbModalityEncoder, 
-    GatedBiModalNetwork, GMUModel, MLPGenreClassifier, MaxOut
-)
+from models.avmnist import MNISTAudio, MNISTImage
+from models.conv import ConvBlockArgs
+from models.maxout import MaxOut
+from models.mmimdb import GMUModel, MLPGenreClassifier, MMIMDbModalityEncoder, GatedBiModalNetwork
+from models.msa.networks.autoencoder import ResidualAE
+from models.msa.networks.bert_text_encoder import BertTextEncoder
+from models.msa.networks.classifier import FcClassifier
+from models.msa.networks.lstm import LSTMEncoder
+from models.msa.networks.textcnn import TextCNN
+from models.msa.self_mm import AuViSubNet, Self_MM
+from models.msa.utt_fusion import UttFusionModel
 
 logger = get_logger()
 
@@ -117,7 +103,7 @@ register_constructor(
     ResidualAE,
     deep=True,
 )
-register_constructor("!LossFunctionGroup", LossFunctionGroup)
+register_constructor("!LossFunctionGroup", LossFunctionGroup, from_dict=True, deep=True)
 register_constructor(
     "!UttFusionModel",
     UttFusionModel,
@@ -159,9 +145,9 @@ register_constructor("!BertTextEncoder", BertTextEncoder)
 register_constructor("!MissingPatternConfig", MissingPatternConfig)
 register_constructor("!ModalityConfig", ModalityConfig)
 
-register_constructor("!AssociationNetworkConfig", AssociationNetworkConfig)
-register_constructor("!InputEncoders", InputEncoders)
-register_constructor("!CMAM", CMAM)
-register_constructor("!CMAMConfig", CMAMConfig)
+# register_constructor("!AssociationNetworkConfig", AssociationNetworkConfig)
+# register_constructor("!InputEncoders", InputEncoders)
+# register_constructor("!CMAM", CMAM)
+# register_constructor("!CMAMConfig", CMAMConfig)
 
 logger.debug("All YAML constructors registered successfully.")

@@ -8,12 +8,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Union
 
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import seaborn as sns
 import yaml
-from numpy.typing import NDArray
 
 from .logging import get_logger
 from .printing import get_console
@@ -35,7 +32,7 @@ class ExperimentReport:
     model_parameter_count: Union[int, Dict[ModelName, int]]
     batch_size: int
     optimizer_info: Dict[str, Any]
-    criterion_info: Dict[str, Any]
+    # criterion_info: Dict[str, Any]
     confusion_matrices_path: PathLike = field(default=None)
     train_dataset_size: int = field(default=-1)
     validation_dataset_size: int = field(default=-1)
@@ -324,7 +321,7 @@ class MetricsReport(SubReport):
     def generate(self, data: Dict[str, Any]) -> Dict[str, Any]:
         dfs = []
 
-        confusion_matrices = defaultdict(dict)
+        confusion_matrices = defaultdict(lambda: defaultdict(list))
 
         for key, metrics_data in data["metrics_history"].items():
             if len(metrics_data) == 0:
@@ -336,7 +333,7 @@ class MetricsReport(SubReport):
 
             for k in confusion_keys:
                 for i, metrics in enumerate(metrics_data):
-                    confusion_matrices[key][k] = metrics[k]
+                    confusion_matrices[key][k].append(metrics[k])
 
                 for data in metrics_data:
                     data.pop(k)
@@ -563,17 +560,17 @@ class ExperimentReportGenerator:
                 console.print(
                     f"[green]✓[/] Saved confusion matrices for {split} to {self.config.logging.metrics_path / f'confusion_matrices_{split}.npy'}"
                 )
-                confusion_plot = plot_confusion_matrices(
-                    metrics_data["confusion_matrices"][split],
-                    self.config.logging.metrics_path / f"confusion_matrices_{split}.pdf",
-                )
+                # confusion_plot = plot_confusion_matrices(
+                #     metrics_data["confusion_matrices"][split],
+                #     self.config.logging.metrics_path / f"confusion_matrices_{split}.pdf",
+                # )
 
-                latex_report.add_figure(
-                    confusion_plot,
-                    f"Confusion Matrices ({split})",
-                    label=f"fig:confusion_{split}",
-                    width="0.9\\textwidth",
-                )
+                # latex_report.add_figure(
+                #     confusion_plot,
+                #     f"Confusion Matrices ({split})",
+                #     label=f"fig:confusion_{split}",
+                #     width="0.9\\textwidth",
+                # )
 
         # Add embedding visualization
         if "embeddings" in report_components and os.path.exists(report_components["embeddings"]["plot_path"]):
@@ -611,7 +608,7 @@ class ExperimentReportGenerator:
             model_parameter_count=report_components["model"]["parameters"],
             batch_size=",".join(f"{k}:{v.batch_size}" for k, v in self.config.data.datasets.items()),
             optimizer_info=self.config.training.optimizer,
-            criterion_info=self.config.training.criterion_kwargs,
+            # criterion_info=self.config.training.criterion_kwargs,
             train_dataset_size=len(experiment_data["metrics_history"]["train"]),
             validation_dataset_size=len(experiment_data["metrics_history"]["validation"]),
             test_dataset_size=len(experiment_data["metrics_history"].get("test", [])),
@@ -633,124 +630,124 @@ class ExperimentReportGenerator:
         return f"ExperimentReportGenerator(" f"output_dir='{self.output_dir}', " f"subreports=[{subreport_names}])"
 
 
-def plot_confusion_matrices(data: Dict[str, NDArray], save_to: Union[str, Path], vertical: bool = False) -> Path:
-    """
-    Plot confusion matrices using seaborn with LaTeX formatting and colorblind-friendly colors.
-    Uses a shared colorbar for all matrices.
+# def plot_confusion_matrices(data: Dict[str, NDArray], save_to: Union[str, Path], vertical: bool = False) -> Path:
+#     """
+#     Plot confusion matrices using seaborn with LaTeX formatting and colorblind-friendly colors.
+#     Uses a shared colorbar for all matrices.
 
-    Parameters
-    ----------
-    data : Dict[str, NDArray]
-        Dictionary mapping model names to their confusion matrices
-    save_to : Union[str, Path]
-        Path where the figure should be saved
-    vertical : bool, optional
-        If True, stack matrices vertically. If False, arrange horizontally
+#     Parameters
+#     ----------
+#     data : Dict[str, NDArray]
+#         Dictionary mapping model names to their confusion matrices
+#     save_to : Union[str, Path]
+#         Path where the figure should be saved
+#     vertical : bool, optional
+#         If True, stack matrices vertically. If False, arrange horizontally
 
-    Returns
-    -------
-    Figure
-        The matplotlib figure object containing the plots
-    """
-    # Set up LaTeX rendering
-    plt.rcParams.update(
-        {
-            "text.usetex": True,
-            "font.family": "serif",
-            "font.serif": ["Computer Modern Roman"],
-            "text.latex.preamble": r"\usepackage{amsmath}",
-        }
-    )
+#     Returns
+#     -------
+#     Figure
+#         The matplotlib figure object containing the plots
+#     """
+#     # Set up LaTeX rendering
+#     plt.rcParams.update(
+#         {
+#             "text.usetex": True,
+#             "font.family": "serif",
+#             "font.serif": ["Computer Modern Roman"],
+#             "text.latex.preamble": r"\usepackage{amsmath}",
+#         }
+#     )
 
-    # Okabe-Ito color palette (colorblind friendly)
-    colors = [
-        "#E69F00",
-        "#56B4E9",
-        "#009E73",
-        "#F0E442",
-        "#0072B2",
-        "#D55E00",
-        "#CC79A7",
-        "#000000",
-    ]
+#     # Okabe-Ito color palette (colorblind friendly)
+#     colors = [
+#         "#E69F00",
+#         "#56B4E9",
+#         "#009E73",
+#         "#F0E442",
+#         "#0072B2",
+#         "#D55E00",
+#         "#CC79A7",
+#         "#000000",
+#     ]
 
-    # Calculate layout
-    n_matrices = len(data)
-    if vertical:
-        n_rows = n_matrices
-        n_cols = 1
-        fig_width = 12
-        fig_height = 4 * n_matrices + 0.5  # Extra space for colorbar
-    else:
-        n_rows = 1
-        n_cols = n_matrices
-        fig_width = min(14, 4.5 * n_matrices)  # Scale width by number of matrices, max two-column width
-        fig_height = 4.5  # Fixed height plus space for colorbar
+#     # Calculate layout
+#     n_matrices = len(data)
+#     if vertical:
+#         n_rows = n_matrices
+#         n_cols = 1
+#         fig_width = 12
+#         fig_height = 4 * n_matrices + 0.5  # Extra space for colorbar
+#     else:
+#         n_rows = 1
+#         n_cols = n_matrices
+#         fig_width = min(14, 4.5 * n_matrices)  # Scale width by number of matrices, max two-column width
+#         fig_height = 4.5  # Fixed height plus space for colorbar
 
-    # Create figure with space for colorbar
-    fig = plt.figure(figsize=(fig_width, fig_height))
+#     # Create figure with space for colorbar
+#     fig = plt.figure(figsize=(fig_width, fig_height))
 
-    # Create a gridspec layout
-    gs = fig.add_gridspec(2, 1, height_ratios=[20, 1], hspace=0.15)
+#     # Create a gridspec layout
+#     gs = fig.add_gridspec(2, 1, height_ratios=[20, 1], hspace=0.15)
 
-    # Create subplot for matrices
-    matrix_axes = gs[0].subgridspec(n_rows, n_cols, hspace=0.4, wspace=0.2)
+#     # Create subplot for matrices
+#     matrix_axes = gs[0].subgridspec(n_rows, n_cols, hspace=0.4, wspace=0.2)
 
-    # Create normalized matrices and find global min/max for consistent scale
-    # normalized_matrices = {}
-    # for name, matrix in data.items():
-    #     normalized_matrices[name] = (
-    # matrix.astype("float") / matrix.sum(axis=1)[:, np.newaxis]
-    # )
+#     # Create normalized matrices and find global min/max for consistent scale
+#     # normalized_matrices = {}
+#     # for name, matrix in data.items():
+#     #     normalized_matrices[name] = (
+#     # matrix.astype("float") / matrix.sum(axis=1)[:, np.newaxis]
+#     # )
 
-    # Plot each confusion matrix
-    for idx, (name, matrix) in enumerate(data.items()):
-        if vertical:
-            ax = fig.add_subplot(matrix_axes[idx, 0])
-        else:
-            ax = fig.add_subplot(matrix_axes[0, idx])
+#     # Plot each confusion matrix
+#     for idx, (name, matrix) in enumerate(data.items()):
+#         if vertical:
+#             ax = fig.add_subplot(matrix_axes[idx, 0])
+#         else:
+#             ax = fig.add_subplot(matrix_axes[0, idx])
 
-        # Create heatmap without colorbar
-        sns.heatmap(
-            matrix,
-            ax=ax,
-            cmap=sns.color_palette(colors, as_cmap=True),
-            square=True,
-            annot=True,
-            cbar=False,
-            vmin=0,
-            vmax=1,
-            fmt=".2E",
-        )
+#         # Create heatmap without colorbar
+#         sns.heatmap(
+#             matrix,
+#             ax=ax,
+#             cmap=sns.color_palette(colors, as_cmap=True),
+#             square=True,
+#             annot=True,
+#             cbar=False,
+#             vmin=0,
+#             vmax=1,
+#             fmt=".2E",
+#         )
 
-        # Customize appearance
-        ax.set_title(f"{name.replace('_', ' ')}", pad=10)
-        ax.set_xlabel("Predicted Label")
-        ax.set_ylabel("True Label")
+#         # Customize appearance
+#         ax.set_title(f"{name.replace('_', ' ')}", pad=10)
+#         ax.set_xlabel("Predicted Label")
+#         ax.set_ylabel("True Label")
 
-        # Set tick positions and labels
-        n_classes = matrix.shape[0]
-        tick_positions = np.arange(n_classes) + 0.5
+#         # Set tick positions and labels
+#         n_classes = matrix.shape[0]
+#         tick_positions = np.arange(n_classes) + 0.5
 
-        if n_classes <= 10:
-            ax.set_xticks(tick_positions)
-            ax.set_yticks(tick_positions)
-            ax.set_xticklabels([f"${i}$" for i in range(n_classes)])
-            ax.set_yticklabels([f"${i}$" for i in range(n_classes)])
+#         if n_classes <= 10:
+#             ax.set_xticks(tick_positions)
+#             ax.set_yticks(tick_positions)
+#             ax.set_xticklabels([f"${i}$" for i in range(n_classes)])
+#             ax.set_yticklabels([f"${i}$" for i in range(n_classes)])
 
-    # # Add horizontal colorbar at the bottom
-    # cbar_ax = fig.add_subplot(gs[1])
-    # norm = mpl.colors.Normalize(vmin=0, vmax=1)
-    # cbar = mpl.colorbar.ColorbarBase(
-    #     cbar_ax,
-    #     cmap=sns.color_palette(colors, as_cmap=True),
-    #     norm=norm,
-    #     orientation="horizontal",
-    #     label="Normalized Count",
-    # )
+#     # # Add horizontal colorbar at the bottom
+#     # cbar_ax = fig.add_subplot(gs[1])
+#     # norm = mpl.colors.Normalize(vmin=0, vmax=1)
+#     # cbar = mpl.colorbar.ColorbarBase(
+#     #     cbar_ax,
+#     #     cmap=sns.color_palette(colors, as_cmap=True),
+#     #     norm=norm,
+#     #     orientation="horizontal",
+#     #     label="Normalized Count",
+#     # )
 
-    # Save figure
-    save_path = Path(save_to)
-    fig.savefig(save_path, bbox_inches="tight", dpi=300)
+#     # Save figure
+#     save_path = Path(save_to)
+#     fig.savefig(save_path, bbox_inches="tight", dpi=300)
 
-    return save_path
+#     return save_path

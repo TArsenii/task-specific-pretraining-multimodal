@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional
 
 import torch
 from data.base_dataset import MultimodalBaseDataset
-from experiment_utils import get_logger
+from experiment_utils.logging import get_logger
 from modalities import Modality, add_modality
 from torch.nn.utils.rnn import pad_sequence
 
@@ -22,7 +22,7 @@ class MultimodalSentimentDataset(MultimodalBaseDataset):
     aligned or unaligned data, and pattern-specific data loading.
     """
 
-    VALID_SPLIT: List[str] = ["train", "valid", "test"]
+    VALID_SPLITS: List[str] = ["train", "valid", "test"]
     NUM_CLASSES: int = 3  # Assumes 3-way classification [positive, negative, neutral]
     AVAILABLE_MODALITIES: Dict[str, Modality] = {
         "audio": Modality.AUDIO,
@@ -86,7 +86,7 @@ class MultimodalSentimentDataset(MultimodalBaseDataset):
             target_modality, Modality
         ), f"Invalid modality provided, must be a Modality instance, not {type(target_modality)}"
         assert (
-            target_modality in self.AVAILABLE_MODALITIES.values()
+            target_modality in self.AVAILABLE_MODALITIES.values() or target_modality == Modality.MULTIMODAL
         ), f"Invalid target modality provided, must be one of {list(self.AVAILABLE_MODALITIES.values())}"
         self.target_modality = target_modality
 
@@ -138,6 +138,8 @@ class MultimodalSentimentDataset(MultimodalBaseDataset):
             ),
         }
 
+        self.original_label_size = core_data["label"].size(0)
+
         return (
             core_data
             if self.aligned
@@ -182,12 +184,12 @@ class MultimodalSentimentDataset(MultimodalBaseDataset):
             sample["video_length"] = self.data["video_lengths"][sample_idx]
 
         modality_loaders = {
-            "audio": (lambda: self.data[str(Modality.AUDIO)][sample_idx], Modality.AUDIO),
-            "video": (lambda: self.data[str(Modality.VIDEO)][sample_idx], Modality.VIDEO),
-            "text": (lambda: self.data[str(Modality.TEXT)][sample_idx], Modality.TEXT),
+            "audio": (lambda: self.data[Modality.AUDIO][sample_idx], Modality.AUDIO),
+            "video": (lambda: self.data[Modality.VIDEO][sample_idx], Modality.VIDEO),
+            "text": (lambda: self.data[Modality.TEXT][sample_idx], Modality.TEXT),
         }
 
-        sample = self.get_sample_and_apply_mask(pattern=pattern, sample=sample, modality_loaders=modality_loaders)
+        sample = self.get_sample_and_apply_mask(patterns=pattern, sample=sample, modality_loaders=modality_loaders)
         return sample
 
     def collate_fn(self, batch: List[Dict[str, Any]]) -> Dict[str, Any]:

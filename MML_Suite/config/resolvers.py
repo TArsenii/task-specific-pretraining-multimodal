@@ -1,17 +1,22 @@
+from __future__ import annotations
+from collections.abc import Callable
 from typing import Type
 
-from cmam_loss import CMAMLoss
+from models.protocols import MultimodalModelProtocol
 from data import AVMNIST, IEMOCAP, MOSEI, MOSI, MSP_IMPROV, MMIMDb
-from experiment_utils import get_console, get_logger
-from torch import nn, optim
+from experiment_utils.printing import get_console
+from experiment_utils.logging import get_logger
+from experiment_utils.utils import kaiming_init
+from torch import optim
 from torch.optim import lr_scheduler
 from torch.utils.data import Dataset
+from torch.nn import init
 
 logger = get_logger()
 console = get_console()
 
 
-def resolve_model_name(_type: str):
+def resolve_model_name(_type: str) -> Type[MultimodalModelProtocol]:
     match _type.lower():
         case "avmnist":
             from models.avmnist import AVMNIST
@@ -52,6 +57,19 @@ def resolve_model_name(_type: str):
 
         case _:
             raise ValueError(f"Unknown model type: {_type}")
+
+
+def resolve_init_fn(_type: str) -> Type[Callable]:
+    ## TODO : Make their parameters configurable using partial functions and probably a config class
+    match _type.lower():
+        case "xavier":
+            raise NotImplementedError("Xavier initialization not implemented yet")
+        case "kaiming":
+            return kaiming_init
+        case "orthogonal":
+            raise NotImplementedError("Orthogonal initialization not implemented yet")
+        case _:
+            raise ValueError(f"Unknown init function: {_type}")
 
 
 def resolve_encoder(_type: str):
@@ -133,52 +151,6 @@ def resolve_scheduler(scheduler_name: str) -> Type[lr_scheduler._LRScheduler]:
 
     logger.debug(f"Resolved scheduler: {scheduler_name}")
     return scheduler_map[scheduler_name]
-
-
-def resolve_criterion(criterion_name: str) -> Type[nn.Module]:
-    """
-    Resolve loss criterion class from string name.
-
-    Args:
-        criterion_name: Name of the criterion (case-insensitive)
-
-    Returns:
-        Criterion class
-    """
-    criterion_map = {
-        "cross_entropy": nn.CrossEntropyLoss,
-        "nll": nn.NLLLoss,
-        "mse": nn.MSELoss,
-        "bce": nn.BCELoss,
-        "bce_with_logits": nn.BCEWithLogitsLoss,
-        "l1": nn.L1Loss,
-        "smooth_l1": nn.SmoothL1Loss,
-        "kl_div": nn.KLDivLoss,
-        "huber": nn.HuberLoss,
-        "triplet": nn.TripletMarginLoss,
-        "cosine": nn.CosineEmbeddingLoss,
-        "margin_ranking": nn.MarginRankingLoss,
-        "multi_margin": nn.MultiMarginLoss,
-        "soft_margin": nn.SoftMarginLoss,
-        "multi_label_margin": nn.MultiLabelMarginLoss,
-        "hinge_embedding": nn.HingeEmbeddingLoss,
-        "poisson_nll": nn.PoissonNLLLoss,
-        "gaussian_nll": nn.GaussianNLLLoss,
-        "ctc": nn.CTCLoss,
-        "cmam": CMAMLoss,
-        "na": lambda x: x,
-        "cycle": nn.MSELoss,
-    }
-
-    criterion_name = criterion_name.lower()
-
-    if criterion_name not in criterion_map:
-        error_msg = f"Unknown criterion: {criterion_name}. Available criteria: {list(criterion_map.keys())}"
-        logger.error(error_msg)
-        raise ValueError(error_msg)
-
-    logger.debug(f"Resolved criterion: {criterion_name}")
-    return criterion_map[criterion_name]
 
 
 def resolve_dataset_name(dataset_name: str) -> Type[Dataset]:

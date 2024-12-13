@@ -6,8 +6,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from experiment_utils import SafeDict, get_console, get_logger
-from experiment_utils.utils import format_path_with_env
+from experiment_utils.logging import get_logger
+from experiment_utils.printing import get_console
+from experiment_utils.utils import SafeDict, format_path_with_env
 from rich.table import Table
 
 from .base_config import BaseConfig
@@ -71,7 +72,7 @@ class LoggingConfig(BaseConfig):
 
         # Format and create all paths
         self._process_paths()
-        self._create_directories()
+        self.create_directories()
         self._log_configuration()
 
     @staticmethod

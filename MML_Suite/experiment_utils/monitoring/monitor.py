@@ -45,12 +45,35 @@ class ExperimentMonitor:
         def _get_activation(name: str):
             def hook(module, input, output):
                 if self._should_track(self.config.activation_interval):
-                    self.storage.add_to_buffer(
-                        "activations",
-                        f"epoch_{self.epoch}/step_{self.step_count}/{name}",
-                        output,
-                        {"epoch": self.epoch, "step": self.step_count},
-                    )
+                    # For LSTM layers, output is (output, (hidden_state, cell_state))
+                    if isinstance(module, nn.LSTM):
+                        output_seq, (hidden, cell) = output
+                        self.storage.add_to_buffer(
+                            "activations",
+                            f"epoch_{self.epoch}/step_{self.step_count}/{name}/output",
+                            output_seq,
+                            {"epoch": self.epoch, "step": self.step_count},
+                        )
+                        self.storage.add_to_buffer(
+                            "activations",
+                            f"epoch_{self.epoch}/step_{self.step_count}/{name}/hidden_state",
+                            hidden,
+                            {"epoch": self.epoch, "step": self.step_count},
+                        )
+                        self.storage.add_to_buffer(
+                            "activations",
+                            f"epoch_{self.epoch}/step_{self.step_count}/{name}/cell_state",
+                            cell,
+                            {"epoch": self.epoch, "step": self.step_count},
+                        )
+                    else:
+                        # Regular layers
+                        self.storage.add_to_buffer(
+                            "activations",
+                            f"epoch_{self.epoch}/step_{self.step_count}/{name}",
+                            output,
+                            {"epoch": self.epoch, "step": self.step_count},
+                        )
 
             return hook
 
@@ -82,8 +105,48 @@ class ExperimentMonitor:
 
             # Gradient tracking
             if self.config.enable_gradient_tracking:
+                # For regular layers with weights
                 if hasattr(module, "weight") and module.weight is not None:
-                    self.hooks[f"{name}_gradient"] = module.weight.register_hook(_get_gradient(name))
+                    self.hooks[f"{name}_gradient_weight"] = module.weight.register_hook(_get_gradient(f"{name}.weight"))
+                    if hasattr(module, "bias") and module.bias is not None:
+                        self.hooks[f"{name}_gradient_bias"] = module.bias.register_hook(_get_gradient(f"{name}.bias"))
+
+                # For LSTM layers
+                if isinstance(module, nn.LSTM):
+                    # Track all LSTM parameters (ih, hh, and biases)
+                    for i, param in enumerate(module.parameters()):
+                        param_name = f"{name}.param_{i}"
+                        self.hooks[f"{name}_gradient_param_{i}"] = param.register_hook(_get_gradient(param_name))
+
+    def _track_weights(self):
+        """Track weight distributions."""
+        console.print("Tracking weights...", end=" ")
+
+        for name, module in self.model.named_modules():
+            # For regular layers
+            if hasattr(module, "weight") and module.weight is not None:
+                self.storage.add_to_buffer(
+                    "weights", f"epoch_{self.epoch}/{name}.weight", module.weight.data, {"epoch": self.epoch}
+                )
+                if hasattr(module, "bias") and module.bias is not None:
+                    self.storage.add_to_buffer(
+                        "weights", f"epoch_{self.epoch}/{name}.bias", module.bias.data, {"epoch": self.epoch}
+                    )
+
+            # For LSTM layers
+            if isinstance(module, nn.LSTM):
+                # Store weight_ih_l[k], weight_hh_l[k], bias_ih_l[k], bias_hh_l[k]
+                # for each layer k
+                for layer in range(module.num_layers):
+                    for weight_type in ["weight_ih_l", "weight_hh_l", "bias_ih_l", "bias_hh_l"]:
+                        param_name = f"{weight_type}{layer}"
+                        if hasattr(module, param_name):
+                            param = getattr(module, param_name)
+                            self.storage.add_to_buffer(
+                                "weights", f"epoch_{self.epoch}/{name}.{param_name}", param.data, {"epoch": self.epoch}
+                            )
+
+            console.print(".", end="")
 
     def start_epoch(self, epoch: int):
         """Start monitoring new epoch."""
@@ -102,17 +165,6 @@ class ExperimentMonitor:
         if self.config.enable_weight_tracking:
             self._track_weights()
         self.storage.flush_all()
-
-    def _track_weights(self):
-        """Track weight distributions."""
-        console.print("Tracking weights...", end=" ")
-
-        for name, module in self.model.named_modules():
-            if hasattr(module, "weight") and module.weight is not None:
-                self.storage.add_to_buffer(
-                    "weights", f"epoch_{self.epoch}/{name}", module.weight.data, {"epoch": self.epoch}
-                )
-            console.print(".", end="")
 
     def close(self):
         """Clean up monitor resources."""

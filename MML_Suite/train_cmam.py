@@ -65,7 +65,7 @@ def setup_experiment(config_path: str, run_id: int) -> tuple[CMAMConfig, Enhance
     # Log initial information
     logger.info(f"Starting experiment with run ID {run_id}")
     logger.info(f"Configuration:\n{config}")
-    console.print(f"Starting experiment with run ID {run_id}")
+    console.rule(f"Starting experiment with run ID {run_id}")
 
     return config, console, logger
 

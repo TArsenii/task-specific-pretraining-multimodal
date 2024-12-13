@@ -6,7 +6,8 @@ from pprint import pformat
 from typing import Any, Dict, List, Optional
 
 import torch.optim as optim
-from experiment_utils import get_console, get_logger
+from experiment_utils.printing import get_console
+from experiment_utils.logging import get_logger
 from rich.panel import Panel
 from torch.nn import Module
 

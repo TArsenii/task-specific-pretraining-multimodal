@@ -5,6 +5,7 @@ from os import PathLike
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
+import torch
 import yaml
 from config.base_config import BaseConfig
 from config.data_config import DataConfig
@@ -14,14 +15,16 @@ from config.metric_config import MetricConfig
 from config.model_config import ModelConfig
 from config.monitor_config import MonitorConfig
 from config.optimizer_config import OptimizerConfig, ParameterGroupsOptimizer
-from config.resolvers import (
-    resolve_criterion,
-    resolve_scheduler,
-)
-from experiment_utils import format_path_with_env, get_console, get_logger
+from config.resolvers import resolve_scheduler
+from experiment_utils.global_state import set_current_exp_name, set_current_run_id
+from experiment_utils.logging import get_logger
 from experiment_utils.loss import LossFunctionGroup
+from experiment_utils.printing import get_console
+from experiment_utils.utils import format_path_with_env
 from rich.panel import Panel
 from rich.table import Table
+from torch.optim import Optimizer
+from torch.optim.lr_scheduler import _LRScheduler as LRScheduler
 
 logger = get_logger()
 console = get_console()
@@ -34,11 +37,9 @@ class TrainingConfig(BaseConfig):
     epochs: int
     num_modalities: int
     optimizer: OptimizerConfig
+    loss_functions: LossFunctionGroup
     scheduler: Optional[str] = None
     scheduler_args: Dict[str, Any] = field(default_factory=dict)
-
-    criterion: str | Dict[str, Dict[str, Any]] = "cross_entropy"
-    criterion_kwargs: Dict[str, Any] | None = None  ## Only valid when criterion is a string
     validation_interval: int = 1
     missing_rates: Optional[List[float]] = None
     do_validation_visualization: bool = False
@@ -85,7 +86,9 @@ class TrainingConfig(BaseConfig):
 
         # Add basic parameters
         table.add_row("Epochs", str(self.epochs))
-        table.add_row("Criterion", f"{self.criterion} {self.criterion_kwargs}")
+
+        for key, value in self.loss_functions.items():
+            table.add_row(f"{key} Criterion", f"{value}")
 
         if self.scheduler:
             table.add_row("Scheduler", f"{self.scheduler} {self.scheduler_args}")
@@ -140,7 +143,7 @@ class BaseExperimentConfig(ABC):
             yaml.dump(self.to_dict(), f)
             logger.info(f"Configuration saved to {path}")
 
-    def get_optimizer(self, model: Any) -> Any:
+    def get_optimizer(self, model: Any) -> Optimizer:
         """Create optimizer instance."""
         try:
             parameter_group_optimizer = ParameterGroupsOptimizer(self.training.optimizer)
@@ -152,7 +155,7 @@ class BaseExperimentConfig(ABC):
             logger.error(f"{error_msg}\n{traceback.format_exc()}")
             raise
 
-    def get_scheduler(self, optimizer: Any) -> Optional[Any]:
+    def get_scheduler(self, optimizer: Any) -> Optional[LRScheduler]:
         """Create scheduler instance."""
         if not self.training.scheduler:
             return None
@@ -162,9 +165,8 @@ class BaseExperimentConfig(ABC):
 
             if self.training.scheduler == "lambda":
                 scheduler_args = self.training.scheduler_args.copy()
-                lambda_lr = scheduler_args.pop("lr_lambda")
-                lambda_func = eval(lambda_lr, scheduler_args)
-                scheduler = scheduler_class(optimizer, lr_lambda=lambda_func)
+                print(f"Scheduler args: {scheduler_args}")
+                scheduler = create_lambda_scheduler(optimizer, scheduler_args)
             else:
                 scheduler = scheduler_class(optimizer, **self.training.scheduler_args)
 
@@ -176,34 +178,44 @@ class BaseExperimentConfig(ABC):
             logger.error(f"{error_msg}\n{traceback.format_exc()}")
             raise
 
-    def get_criterion(
-        self,
-        criterion_info: Optional[Union[str, Dict[str, Dict[str, Any]]]],
-        criterion_kwargs: Optional[Dict[str, Any]] = None,
-    ) -> LossFunctionGroup:
-        """Create criterion instance."""
 
-        if isinstance(criterion_info, dict):
-            loss_function_group_data = {}
-            weights = []
-            for key, value in criterion_info.items():
-                weight: float = value.pop(
-                    "weight", 1.0
-                )  # Default weight is 1.0 and removes it from the dictionary if it exists so it doesn't interfere with the criterion kwargs
-                weights.append(weight)
-                loss_function_group_data[key] = resolve_criterion(key)(**value)
+def create_lambda_scheduler(optimizer, scheduler_args):
+    """
+    Creates a PyTorch LambdaLR scheduler with proper variable scoping.
 
-            return LossFunctionGroup(weights=weights, **loss_function_group_data)
-        else:
-            criterion_name = self.training.criterion
-            criterion_kwargs = self.training.criterion_kwargs or {}
-            if criterion_name == "na":
-                return None
-            criterion_cls = resolve_criterion(criterion_name)
-            criterion = criterion_cls(**criterion_kwargs)
+    Args:
+        optimizer: PyTorch optimizer
+        scheduler_args: Dictionary containing scheduler arguments
+    """
+    # Extract all the arguments
+    lambda_lr = scheduler_args.pop("lr_lambda")
 
-            logger.info(f"Created criterion: {criterion.__class__.__name__}")
-            return LossFunctionGroup(criterion_name=criterion)
+    # Create a closure that captures all the necessary variables
+    def create_lambda_func(args):
+        # Create a copy of the variables in the local scope
+        local_vars = args.copy()
+
+        def lambda_function(epoch):
+            # Make all arguments available to the lambda function
+            for key, value in local_vars.items():
+                globals()[key] = value
+
+            # Evaluate the lambda expression
+            result = eval(lambda_lr, globals(), {"epoch": epoch})
+
+            # Clean up globals to prevent leaks
+            for key in local_vars:
+                if key in globals():
+                    del globals()[key]
+
+            return result
+
+        return lambda_function
+
+    # Create the scheduler with the properly scoped lambda function
+    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=create_lambda_func(scheduler_args))
+    console.print(f"Created LambdaLR scheduler with lambda function: {lambda_lr}")
+    return scheduler
 
 
 @dataclass
@@ -280,6 +292,10 @@ class StandardMultimodalConfig(BaseExperimentConfig):
             # Create component configs
             experiment_config = data["experiment"]
             experiment_config["run_id"] = run_id
+
+            set_current_run_id(run_id)
+            set_current_exp_name(experiment_config["name"])
+
             data_config = data["data"]
 
             model_config: ModelConfig = data["model"]
@@ -289,11 +305,13 @@ class StandardMultimodalConfig(BaseExperimentConfig):
                 experiment_name=experiment_config["name"],
                 run_id=run_id,
             )
-            model_config.pretrained_path = logging_config.format_path(
-                format_path_with_env(model_config.pretrained_path)
-            )
-            console.print(f"Pretrained Path: {model_config.pretrained_path}")
-            model_config.validate_config()
+
+            if model_config.pretrained_path is not None:
+                model_config.pretrained_path = logging_config.format_path(
+                    format_path_with_env(model_config.pretrained_path)
+                )
+                console.print(f"Pretrained Path: {model_config.pretrained_path}")
+                model_config.validate_config()
             training_config = TrainingConfig.from_dict(data["training"])
 
             metrics_config = MetricConfig.from_dict(data["metrics"])
