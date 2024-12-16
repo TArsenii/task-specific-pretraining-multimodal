@@ -83,7 +83,15 @@ class ResidualXE(nn.Module):
                       concat: [(input_dim, 128), (128, 64), (64, 32), (32, 64), (128, 128), (256, input_dim)]
     """
 
-    def __init__(self, layers, n_blocks, input_dim, output_dim, dropout=0.5, use_bn=False):
+    def __init__(
+        self,
+        layers: List[int],
+        n_blocks: int,
+        input_dim: int,
+        output_dim: int,
+        dropout: float = 0.5,
+        use_bn: bool = False,
+    ):
         super(ResidualXE, self).__init__()
         self.use_bn = use_bn
         self.dropout = dropout

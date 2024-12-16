@@ -3,7 +3,6 @@ from itertools import combinations
 from typing import Any, Callable, Dict, List, Literal, Optional, Tuple
 
 import torch
-
 from experiment_utils.printing import get_console
 from modalities import Modality, create_missing_mask
 from torch.utils.data import Dataset
@@ -24,19 +23,16 @@ class MultimodalBaseDataset(Dataset):
         assert split in self.VALID_SPLITS, f"Invalid split provided, must be one of {self.VALID_SPLITS}"
 
         self.missing_patterns = missing_patterns
+
         # Handle pattern selection
         if selected_patterns is not None:
             self.selected_patterns = self.validate_patterns(selected_patterns)
         else:
             self.selected_patterns = self.get_all_possible_patterns()
-        # if "m" in self.missing_patterns:
-        #     full_condition = "".join([k for k in self.AVAILABLE_MODALITIES.keys()])
-        #     self.missing_patterns[full_condition] = self.missing_patterns["m"]
-        #     del self.missing_patterns["m"]
         self.pattern_indices = None
 
     def get_sample_and_apply_mask(
-        self, patterns: Dict[str, float], sample, modality_loaders: Dict[str, Tuple[Callable, Modality]]
+        self, patterns: Dict[str, float], sample: Dict[str, Any], modality_loaders: Dict[str, Tuple[Callable, Modality]]
     ) -> Dict[str, Any]:
         """Load data for each modality and apply masking."""
         for mod_name, (loader_fn, mod_enum) in modality_loaders.items():
@@ -46,16 +42,15 @@ class MultimodalBaseDataset(Dataset):
 
                 # Apply masking
                 if mod_name in patterns:
-                    prob = patterns[mod_name]
-                    mask = prob  ## TODO: change this to create_missing_mask(1, data.shape[0], pct_missing) and utilise the ModalityConfig missing rates
-                    # mask = create_missing_mask(1, data.shape[0], prob)
+                    pct_missing = patterns[mod_name]
+                    mask = create_missing_mask(1, data.shape[0], pct_missing)
                 else:
                     mask = torch.ones_like(data)
 
                 sample[f"{str(mod_enum)}_original"] = data * mask
                 sample[mod_enum] = data * mask
                 sample[f"{str(mod_enum)}_reverse"] = data * -1 * (mask - 1)
-                sample["missing_mask"][mod_enum] = mask
+                sample[f"{str(mod_enum)}_missing_index"] = mask
 
         return sample
 

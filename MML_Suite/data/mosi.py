@@ -175,7 +175,7 @@ class MultimodalSentimentDataset(MultimodalBaseDataset):
         sample = {
             "label": self.data["label"][sample_idx],
             "pattern_name": pattern_name,
-            "missing_mask": {},
+            "missing_index": {},
             "sample_idx": sample_idx,
         }
 
@@ -217,6 +217,7 @@ class MultimodalSentimentDataset(MultimodalBaseDataset):
         collated = {
             "label": torch.stack([b["label"] for b in batch]),
             "pattern_names": [b["pattern_name"] for b in batch],
+            "missing_index": [b[""] for b in batch],
         }
 
         for mod_enum in self.AVAILABLE_MODALITIES.values():

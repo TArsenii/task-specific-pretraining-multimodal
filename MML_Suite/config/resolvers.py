@@ -34,6 +34,14 @@ def resolve_model_name(_type: str) -> Type[MultimodalModelProtocol]:
             from models.msa.mmin import MMIN
 
             return MMIN
+        case "redcore":
+            from models.msa.redcore import RedCore
+
+            return RedCore
+        case "transformer":
+            from models.msa.networks.transformer import Transformer
+
+            return Transformer
         case "mmimdb":
             from models.mmimdb import GMUModel
 

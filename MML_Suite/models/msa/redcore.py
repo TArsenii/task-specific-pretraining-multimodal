@@ -30,9 +30,9 @@ class RedCore(Module, MonitoringMixin, MultimodalModelProtocol):
         netAT_V: ResidualXE,
         netAV_T: ResidualXE,
         netVT_A: ResidualAE,
-        netCls_A: FcClassifier,
-        netCls_V: FcClassifier,
-        netCls_T: FcClassifier,
+        netC_A: FcClassifier,
+        netC_V: FcClassifier,
+        netC_T: FcClassifier,
         share_weight: bool = False,
         loss_beta: float = 0.95,
         interval_i: int = 2,
@@ -53,9 +53,9 @@ class RedCore(Module, MonitoringMixin, MultimodalModelProtocol):
         self.netAT_V = netAT_V
         self.netAV_T = netAV_T
         self.netVT_A = netVT_A
-        self.netCls_A = netCls_A
-        self.netCls_V = netCls_V
-        self.netCls_T = netCls_T
+        self.netC_A = netC_A
+        self.netC_V = netC_V
+        self.netCls_T = netC_T
         ae_input_dim = self.netA.embd_width + self.netV.embd_width + self.netT.embd_width
 
         if share_weight:
@@ -128,8 +128,8 @@ class RedCore(Module, MonitoringMixin, MultimodalModelProtocol):
         feature_fusion_r = torch.cat([feature_A_r, feature_V_r, feature_T_r], dim=-1)
         logits = self.netC.forward(feature_fusion_r)
 
-        logits_a = self.netCls_A.forward(feature_A_r)
-        logits_v = self.netCls_V.forward(feature_V_r)
+        logits_a = self.netC_A.forward(feature_A_r)
+        logits_v = self.netC_V.forward(feature_V_r)
         logits_t = self.netCls_T.forward(feature_T_r)
 
         return {
@@ -177,12 +177,12 @@ class RedCore(Module, MonitoringMixin, MultimodalModelProtocol):
         )
 
         A, V, T, missing_index_A, missing_index_A, missing_index_T, labels = (
-            A.to(device),
-            V.to(device),
-            T.to(device),
-            missing_index_A.to(device),
-            missing_index_A.to(device),
-            missing_index_T.to(device),
+            A.float().to(device),
+            V.float().to(device),
+            T.float().to(device),
+            missing_index_A.float().to(device),
+            missing_index_A.float().to(device),
+            missing_index_T.float().to(device),
             labels.to(device),
         )
         miss_types = np.array(miss_types)
@@ -354,12 +354,12 @@ class RedCore(Module, MonitoringMixin, MultimodalModelProtocol):
             )
 
         A, V, T, missing_index_A, missing_index_A, missing_index_T, labels = (
-            A.to(device),
-            V.to(device),
-            T.to(device),
-            missing_index_A.to(device),
-            missing_index_A.to(device),
-            missing_index_T.to(device),
+            A.float().to(device),
+            V.float().to(device),
+            T.float().to(device),
+            missing_index_A.float().to(device),
+            missing_index_A.float().to(device),
+            missing_index_T.float().to(device),
             labels.to(device),
         )
         miss_types = np.array(miss_types)

@@ -14,13 +14,14 @@ from models.avmnist import MNISTAudio, MNISTImage
 from models.conv import ConvBlockArgs
 from models.maxout import MaxOut
 from models.mmimdb import GMUModel, MLPGenreClassifier, MMIMDbModalityEncoder, GatedBiModalNetwork
-from models.msa.networks.autoencoder import ResidualAE
+from models.msa.networks.autoencoder import ResidualAE, ResidualXE
 from models.msa.networks.bert_text_encoder import BertTextEncoder
 from models.msa.networks.classifier import FcClassifier
 from models.msa.networks.lstm import LSTMEncoder
 from models.msa.networks.textcnn import TextCNN
 from models.msa.self_mm import AuViSubNet, Self_MM
 from models.msa.utt_fusion import UttFusionModel
+from models.msa.networks.transformer import Transformer
 
 logger = get_logger()
 
@@ -109,6 +110,8 @@ register_constructor(
     UttFusionModel,
     deep=True,
 )
+register_constructor("!Transformer", Transformer, deep=True)
+register_constructor("!ResidualXE", ResidualXE, deep=True)
 register_constructor(
     "!MMIMDbModalityEncoder",
     MMIMDbModalityEncoder,
