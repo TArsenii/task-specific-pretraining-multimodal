@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-from collections import defaultdict
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional
 
 import numpy as np
 import torch
-import torch.nn.functional as F
 from experiment_utils.utils import safe_detach
 from experiment_utils.loss import LossFunctionGroup
 from experiment_utils.metric_recorder import MetricRecorder
@@ -20,7 +18,6 @@ from models.protocols import MultimodalModelProtocol
 from torch import Tensor
 from torch.nn import Module
 from torch.optim import Optimizer
-from torch.utils.data import DataLoader
 
 
 class MMIN(Module, MonitoringMixin, MultimodalModelProtocol):
@@ -53,7 +50,7 @@ class MMIN(Module, MonitoringMixin, MultimodalModelProtocol):
 
         self.netC = netC
         self.pretrained_model: UttFusionModel = pretrained_model
-        self.pretrained_model.load_pretrained()  # Load the pre-trained model, but will quit if the mode does not have a pretrained path
+        self.pretrained_model.load_pretrained()  # Load the pre-trained model, but will quit if the model does not have a pretrained path
         self.pretrained_model.eval()
         self.clip = clip
 
@@ -119,9 +116,9 @@ class MMIN(Module, MonitoringMixin, MultimodalModelProtocol):
         **kwargs,
     ) -> Dict[str, Any]:
         A, V, T, A_reverse, V_reverse, T_reverse, labels, miss_types = (
-            batch[Modality.AUDIO],
-            batch[Modality.VIDEO],
-            batch[Modality.TEXT],
+            batch[str(Modality.AUDIO)],
+            batch[str(Modality.VIDEO)],
+            batch[str(Modality.TEXT)],
             batch[f"{str(Modality.AUDIO)}_reverse"],
             batch[f"{str(Modality.VIDEO)}_reverse"],
             batch[f"{str(Modality.TEXT)}_reverse"],
@@ -146,10 +143,10 @@ class MMIN(Module, MonitoringMixin, MultimodalModelProtocol):
         forward_results = self(A, V, T, A_reverse, V_reverse, T_reverse)
         predictions = forward_results["logits"].argmax(dim=1)
 
-        loss_ce = loss_functions("cross_entropy", forward_results["logits"], labels)
-        loss_mse = loss_functions("mse", forward_results["fusion"], forward_results["recon_fusion"])
+        loss_ce = loss_functions(forward_results["logits"], labels, key="cross_entropy")
+        loss_mse = loss_functions(forward_results["fusion"], forward_results["recon_fusion"], key="mse")
         loss_cycle = loss_functions(
-            "cycle", safe_detach(forward_results["fusion"], to_np=False), forward_results["recon_cycle"]
+            safe_detach(forward_results["fusion"], to_np=False), forward_results["recon_cycle"], key="cycle"
         )
 
         loss = loss_ce + loss_mse + loss_cycle
@@ -183,9 +180,9 @@ class MMIN(Module, MonitoringMixin, MultimodalModelProtocol):
     ) -> Dict[str, Any]:
         with torch.no_grad():
             A, V, T, A_reverse, V_reverse, T_reverse, labels, miss_types = (
-                batch[Modality.AUDIO],
-                batch[Modality.VIDEO],
-                batch[Modality.TEXT],
+                batch[str(Modality.AUDIO)],
+                batch[str(Modality.VIDEO)],
+                batch[str(Modality.TEXT)],
                 batch[str(Modality.AUDIO) + "_reverse"],
                 batch[str(Modality.VIDEO) + "_reverse"],
                 batch[str(Modality.TEXT) + "_reverse"],
@@ -209,10 +206,10 @@ class MMIN(Module, MonitoringMixin, MultimodalModelProtocol):
             forward_results = self(A, V, T, A_reverse, V_reverse, T_reverse)
             predictions = forward_results["logits"].argmax(dim=1)
 
-            loss_ce = loss_functions("cross_entropy", forward_results["logits"], labels)
-            loss_mse = loss_functions("mse", forward_results["fusion"], forward_results["recon_fusion"])
+            loss_ce = loss_functions(forward_results["logits"], labels, key="cross_entropy")
+            loss_mse = loss_functions(forward_results["fusion"], forward_results["recon_fusion"], key="mse")
             loss_cycle = loss_functions(
-                "cycle", safe_detach(forward_results["fusion"], to_np=False), forward_results["recon_cycle"]
+                safe_detach(forward_results["fusion"], to_np=False), forward_results["recon_cycle"], key="cycle"
             )
 
             loss = loss_ce + loss_mse + loss_cycle

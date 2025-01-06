@@ -103,11 +103,12 @@ class LossFunctionGroup(Dict[str, WeightedLossTerm]):
         return l_group
 
     def __call__(
-        self, key: Optional[str] = None, override_weight_with: Optional[float] = None, *args, **kwargs
+        self, *args, key: Optional[str] = None, override_weight_with: Optional[float] = None, **kwargs
     ) -> Tensor:
         if not key:
             ## assume a single loss function
             key = list(self.keys())[0]
+
         return self[key].loss_fn(*args, **kwargs) * (
             self[key].weight if override_weight_with is None else override_weight_with
         )

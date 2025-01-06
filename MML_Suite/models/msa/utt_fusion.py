@@ -3,20 +3,21 @@ from typing import Any, Dict, Optional
 
 import numpy as np
 import torch
+import torch.nn.functional as F
+from experiment_utils.global_state import get_current_exp_name, get_current_run_id
 from experiment_utils.loss import LossFunctionGroup
 from experiment_utils.metric_recorder import MetricRecorder
 from experiment_utils.printing import get_console
 from experiment_utils.utils import SafeDict, format_path_with_env, safe_detach
-from experiment_utils.global_state import get_current_exp_name, get_current_run_id
 from modalities import Modality
+from models.mixins import MultimodalMonitoringMixin
 from models.msa.networks.classifier import FcClassifier
 from models.msa.networks.lstm import LSTMEncoder
 from models.msa.networks.textcnn import TextCNN
+from models.protocols import MultimodalModelProtocol
 from torch.nn import Module
 from torch.optim import Optimizer
 from torch.utils.data import DataLoader
-from models.mixins import MultimodalMonitoringMixin
-from models.protocols import MultimodalModelProtocol
 
 console = get_console()
 
@@ -170,9 +171,9 @@ class UttFusionModel(Module, MultimodalMonitoringMixin, MultimodalModelProtocol)
             Dict[str, Any]: Training results including loss.
         """
         A, V, T, labels, _miss_type = (
-            batch[Modality.AUDIO].to(device).float(),
-            batch[Modality.VIDEO].to(device).float(),
-            batch[Modality.TEXT].to(device).float(),
+            batch[str(Modality.AUDIO)].to(device).float(),
+            batch[str(Modality.VIDEO)].to(device).float(),
+            batch[str(Modality.TEXT)].to(device).float(),
             batch["label"].to(device),
             batch["pattern_name"],
         )
@@ -181,14 +182,14 @@ class UttFusionModel(Module, MultimodalMonitoringMixin, MultimodalModelProtocol)
         logits = self.forward(A, V, T)
 
         optimizer.zero_grad()
-        loss = loss_functions(None, logits.squeeze(), labels.squeeze())
+        loss = loss_functions(logits.squeeze(), labels.squeeze())
         loss.backward()
 
         if self.clip is not None:
             torch.nn.utils.clip_grad_norm_(self.parameters(), self.clip)
         optimizer.step()
 
-        predictions = safe_detach(logits.argmax(dim=-1).squeeze())
+        predictions = safe_detach(F.softmax(logits, dim=-1).argmax(dim=-1).squeeze())
         labels = safe_detach(labels.squeeze())
 
         metric_recorder.update_all(predictions=predictions, targets=labels, m_types=np.array(_miss_type))
@@ -222,9 +223,9 @@ class UttFusionModel(Module, MultimodalMonitoringMixin, MultimodalModelProtocol)
 
         with torch.no_grad():
             A, V, T, labels, miss_type = (
-                batch[Modality.AUDIO].to(device).float(),
-                batch[Modality.VIDEO].to(device).float(),
-                batch[Modality.TEXT].to(device).float(),
+                batch[str(Modality.AUDIO)].to(device).float(),
+                batch[str(Modality.VIDEO)].to(device).float(),
+                batch[str(Modality.TEXT)].to(device).float(),
                 batch["label"].to(device),
                 batch["pattern_name"],
             )
@@ -233,8 +234,8 @@ class UttFusionModel(Module, MultimodalMonitoringMixin, MultimodalModelProtocol)
 
             miss_types = np.array(miss_type)
 
-            loss = loss_functions(None, logits.squeeze(), labels)
-            predictions = safe_detach(logits.argmax(dim=-1).squeeze())
+            loss = loss_functions(logits.squeeze(), labels)
+            predictions = safe_detach(F.softmax(logits, dim=-1).argmax(dim=-1).squeeze())
             labels = safe_detach(labels.squeeze())
 
             metric_recorder.update_all(predictions=predictions, targets=labels, m_types=miss_types)

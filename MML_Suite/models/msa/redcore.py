@@ -77,12 +77,6 @@ class RedCore(Module, MonitoringMixin, MultimodalModelProtocol):
         self._eta_ext = eta_ext
         self.clip = clip
 
-    def train(self) -> None:
-        super().train()
-
-    def eval(self) -> None:
-        super().eval()
-
     def forward(
         self,
         A: Tensor,
@@ -166,9 +160,9 @@ class RedCore(Module, MonitoringMixin, MultimodalModelProtocol):
         **kwargs,
     ) -> Dict[str, Any]:
         A, V, T, missing_index_A, missing_index_A, missing_index_T, labels, miss_types = (
-            batch[Modality.AUDIO],
-            batch[Modality.VIDEO],
-            batch[Modality.TEXT],
+            batch[str(Modality.AUDIO)],
+            batch[str(Modality.VIDEO)],
+            batch[str(Modality.TEXT)],
             batch[str(Modality.AUDIO) + "_missing_index"],
             batch[str(Modality.VIDEO) + "_missing_index"],
             batch[str(Modality.TEXT) + "_missing_index"],
@@ -201,10 +195,10 @@ class RedCore(Module, MonitoringMixin, MultimodalModelProtocol):
 
         ## Below handles the * cross_entropy_weight variable too, just inside the loss_function call
         ## Each one is equivalent to ``cross_entropy_weight * cross_entropy_loss(logits, labels)``
-        loss_ce = loss_functions("cross_entropy", logits, labels)
-        loss_ce_A = loss_functions("cross_entropy", forward_results["logits_A"], labels)
-        loss_ce_V = loss_functions("cross_entropy", forward_results["logits_V"], labels)
-        loss_ce_T = loss_functions("cross_entropy", forward_results["logits_T"], labels)
+        loss_ce = loss_functions(logits, labels, key="cross_entropy")
+        loss_ce_A = loss_functions(forward_results["logits_A"], labels, key="cross_entropy")
+        loss_ce_V = loss_functions(forward_results["logits_V"], labels, key="cross_entropy")
+        loss_ce_T = loss_functions(forward_results["logits_T"], labels, key="cross_entropy")
 
         fmu_A = forward_results["fmu_A"]
         flog_var_A = forward_results["flog_var_A"]
@@ -245,32 +239,17 @@ class RedCore(Module, MonitoringMixin, MultimodalModelProtocol):
         feature_T_miss, gen_T = forward_results["feature_T_miss"], forward_results["gen_T"]
 
         loss_mse_A = (
-            loss_functions(
-                "mse",
-                1.0,
-                gen_A * index_A,
-                feature_A_miss * index_A,
-            )
+            loss_functions(gen_A * index_A, feature_A_miss * index_A, key="mse", override_weight_with=1.0)
             / batch_size_A
         )
 
         loss_mse_V = (
-            loss_functions(
-                "mse",
-                1.0,
-                gen_V * index_V,
-                feature_V_miss * index_V,
-            )
+            loss_functions(gen_V * index_V, feature_V_miss * index_V, key="mse", override_weight_with=1.0)
             / batch_size_V
         )
 
         loss_mse_T = (
-            loss_functions(
-                "mse",
-                1.0,
-                gen_T * index_T,
-                feature_T_miss * index_T,
-            )
+            loss_functions(gen_T * index_T, feature_T_miss * index_T, key="mse", override_weight_with=1.0)
             / batch_size_T
         )
 
@@ -285,7 +264,7 @@ class RedCore(Module, MonitoringMixin, MultimodalModelProtocol):
         loss_ATV = self._loss_A + self._loss_V + self._loss_T
         loss_ATV_avg = loss_ATV / 3.0
         ra = (loss_ATV_avg - loss_ATV) / loss_ATV_avg
-
+        ra = float(ra)
         if self._iter_count % 500 == 0:
             self._eta = self._eta * self._eta_ext
 
@@ -294,7 +273,7 @@ class RedCore(Module, MonitoringMixin, MultimodalModelProtocol):
             self._beta[0] = max(0.1, self._beta[0])
             self._beta[1] = max(0.1, self._beta[1])
             self._beta[2] = max(0.1, self._beta[2])
-            self._beta = self.beta / (sum(self._beta**2) ** (0.5))
+            self._beta = self._beta / (sum(self._beta**2) ** (0.5))
 
         self._iter_count += 1
         mse_weight = loss_functions["mse"].weight
@@ -343,9 +322,9 @@ class RedCore(Module, MonitoringMixin, MultimodalModelProtocol):
     ) -> Dict[str, Any]:
         with torch.no_grad():
             A, V, T, missing_index_A, missing_index_A, missing_index_T, labels, miss_types = (
-                batch[Modality.AUDIO],
-                batch[Modality.VIDEO],
-                batch[Modality.TEXT],
+                batch[str(Modality.AUDIO)],
+                batch[str(Modality.VIDEO)],
+                batch[str(Modality.TEXT)],
                 batch[str(Modality.AUDIO) + "_missing_index"],
                 batch[str(Modality.VIDEO) + "_missing_index"],
                 batch[str(Modality.TEXT) + "_missing_index"],
@@ -364,7 +343,7 @@ class RedCore(Module, MonitoringMixin, MultimodalModelProtocol):
         )
         miss_types = np.array(miss_types)
 
-        self.eval()()
+        self.eval()
 
         forward_results = self.forward(A, V, T, missing_index_A, missing_index_A, missing_index_T)
         batch_size = missing_index_A.shape[0]
@@ -377,10 +356,10 @@ class RedCore(Module, MonitoringMixin, MultimodalModelProtocol):
 
         ## Below handles the * cross_entropy_weight variable too, just inside the loss_function call
         ## Each one is equivalent to ``cross_entropy_weight * cross_entropy_loss(logits, labels)``
-        loss_ce = loss_functions("cross_entropy", logits, labels)
-        loss_ce_A = loss_functions("cross_entropy", forward_results["logits_A"], labels)
-        loss_ce_V = loss_functions("cross_entropy", forward_results["logits_V"], labels)
-        loss_ce_T = loss_functions("cross_entropy", forward_results["logits_T"], labels)
+        loss_ce = loss_functions(logits, labels, key="cross_entropy")
+        loss_ce_A = loss_functions(forward_results["logits_A"], labels, key="cross_entropy")
+        loss_ce_V = loss_functions(forward_results["logits_V"], labels, key="cross_entropy")
+        loss_ce_T = loss_functions(forward_results["logits_T"], labels, key="cross_entropy")
 
         fmu_A = forward_results["fmu_A"]
         flog_var_A = forward_results["flog_var_A"]
@@ -421,32 +400,17 @@ class RedCore(Module, MonitoringMixin, MultimodalModelProtocol):
         feature_T_miss, gen_T = forward_results["feature_T_miss"], forward_results["gen_T"]
 
         loss_mse_A = (
-            loss_functions(
-                "mse",
-                1.0,
-                gen_A * index_A,
-                feature_A_miss * index_A,
-            )
+            loss_functions(gen_A * index_A, feature_A_miss * index_A, key="mse", override_weight_with=1.0)
             / batch_size_A
         )
 
         loss_mse_V = (
-            loss_functions(
-                "mse",
-                1.0,
-                gen_V * index_V,
-                feature_V_miss * index_V,
-            )
+            loss_functions(gen_V * index_V, feature_V_miss * index_V, key="mse", override_weight_with=1.0)
             / batch_size_V
         )
 
         loss_mse_T = (
-            loss_functions(
-                "mse",
-                1.0,
-                gen_T * index_T,
-                feature_T_miss * index_T,
-            )
+            loss_functions(gen_T * index_T, feature_T_miss * index_T, key="mse", override_weight_with=1.0)
             / batch_size_T
         )
 
@@ -461,6 +425,7 @@ class RedCore(Module, MonitoringMixin, MultimodalModelProtocol):
         loss_ATV = self._loss_A + self._loss_V + self._loss_T
         loss_ATV_avg = loss_ATV / 3.0
         ra = (loss_ATV_avg - loss_ATV) / loss_ATV_avg
+        ra = float(ra)
 
         if self._iter_count % 500 == 0:
             self._eta = self._eta * self._eta_ext
@@ -470,7 +435,7 @@ class RedCore(Module, MonitoringMixin, MultimodalModelProtocol):
             self._beta[0] = max(0.1, self._beta[0])
             self._beta[1] = max(0.1, self._beta[1])
             self._beta[2] = max(0.1, self._beta[2])
-            self._beta = self.beta / (sum(self._beta**2) ** (0.5))
+            self._beta = self._beta / (sum(self._beta**2) ** (0.5))
 
         self._iter_count += 1
         mse_weight = loss_functions["mse"].weight

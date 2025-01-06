@@ -1,12 +1,13 @@
 import atexit
-from collections import defaultdict
+import json
 import os
 import subprocess
 import time
 import warnings
 from argparse import ArgumentParser
+from collections import defaultdict
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional, Tuple, Union
+from typing import Any, Dict, List, Literal, Optional, Tuple
 
 import numpy as np
 import torch
@@ -14,8 +15,8 @@ from config.multimodal_training_config import StandardMultimodalConfig
 from config.resolvers import resolve_init_fn, resolve_model_name
 from experiment_utils.checkpoints import CheckpointManager
 from experiment_utils.experiment_report import (
-    ExperimentReportGenerator,
     EmbeddingVisualizationReport,
+    ExperimentReportGenerator,
     MetricsReport,
     ModelReport,
     TimingReport,
@@ -25,7 +26,7 @@ from experiment_utils.loss import LossFunctionGroup
 from experiment_utils.metric_recorder import MetricRecorder
 from experiment_utils.monitoring import ExperimentMonitor
 from experiment_utils.printing import EnhancedConsole, get_console
-from experiment_utils.utils import PARAMETER_SIZE_BYTES, clean_checkpoints, gpu_memory
+from experiment_utils.utils import PARAMETER_SIZE_BYTES, clean_checkpoints, gpu_memory, prepare_metrics_for_json
 from modalities import add_modality
 from models.protocols import MultimodalModelProtocol
 from rich import box
@@ -313,7 +314,7 @@ def train_epoch(
 
     console.start_task("Training", total=len(train_loader), style="light slate_blue")
     start_time = time.time()
-    for batch in train_loader:
+    for i, batch in enumerate(train_loader):
         train_output: Dict[str, Any] = model.train_step(
             batch,
             loss_functions=loss_functions,
@@ -504,7 +505,10 @@ def _train_loop(
             )
             console.print(f"[green]>> New best model saved at epoch {epoch}[/]")
 
-        if not should_continue:
+        config_do_early_stopping: bool = config.training.early_stopping
+
+        ## Only stop early if the config says to do so AND the check_early_stopping function says to do so.
+        if config_do_early_stopping and not should_continue:
             console.print("[bold red]Early stopping triggered. Stopping training.[/]")
             break
 
@@ -523,7 +527,7 @@ def _train_loop(
     return best_metrics
 
 
-def _test(
+def test(
     model: MultimodalModelProtocol,
     dataloaders: Dict[str, DataLoader],
     loss_functions: LossFunctionGroup,
@@ -595,17 +599,23 @@ def main_cross_validation(config: StandardMultimodalConfig) -> Tuple[Module, Dic
 
     console.start_task("Cross-Validation", total=n_folds)
 
-    for fold_index in range(n_folds):
-        console.print(f"\n[bold cyan]Starting Fold {fold_index + 1}/{n_folds}[/]")
-        logger.info(f"Starting Fold {fold_index + 1}/{n_folds}")
+    models_output_path = Path(config.logging.model_output_path)
+
+    for fold_index in range(1, n_folds + 1):
+        console.print(f"\n[bold cyan]Starting Fold {fold_index}/{n_folds}[/]")
+        logger.info(f"Starting Fold {fold_index}/{n_folds}")
 
         # Update paths for the fold
-        fold_output_dir = Path(config.logging.model_output_path) / f"fold_{fold_index}"
+        fold_output_dir = models_output_path / f"fold_{fold_index}"
         fold_output_dir.mkdir(parents=True, exist_ok=True)
         config.logging.model_output_path = str(fold_output_dir)
 
+        for dataset_config in config.data.datasets.values():
+            dataset_config.kwargs["cv_no"] = fold_index
+
         # Prepare fold-specific components
         dataloaders = setup_dataloaders(config)
+        console.print(f"Finished building dataloaders for split {fold_index}.")
         model, optimizer, loss_functions, scheduler, device, metric_recorder = setup_model_components(
             config=config, dataloaders=dataloaders
         )
@@ -630,7 +640,7 @@ def main_cross_validation(config: StandardMultimodalConfig) -> Tuple[Module, Dic
             )
 
             # Test
-            test_metrics = _test(
+            test_metrics = test(
                 model=model,
                 dataloaders=dataloaders,
                 loss_functions=loss_functions,
@@ -651,19 +661,112 @@ def main_cross_validation(config: StandardMultimodalConfig) -> Tuple[Module, Dic
 
     console.complete_task("Cross-Validation")
 
-    # Aggregate and log cross-validation results
-    aggregated_metrics = {
-        metric: {
-            "mean": np.mean([fold_metrics[fold][metric] for fold in fold_metrics]),
-            "std": np.std([fold_metrics[fold][metric] for fold in fold_metrics]),
-        }
-        for metric in fold_metrics[0]
-    }
+    _train_metrics = []
+    _val_metrics = []
+    _test_metrics = []
 
-    console.print("\n[bold green]Cross-validation results[/]")
-    for metric, values in aggregated_metrics.items():
-        console.print(f"{metric}: {values['mean']:.4f} ± {values['std']:.4f}")
-        logger.info(f"{metric}: {values['mean']:.4f} ± {values['std']:.4f}")
+    for fold in fold_metrics:
+        ## Basically, the train and validation is just a list of metric dicts for each epoch of training.
+        train_metrics: List[Dict[str, Any]] = fold_metrics[fold]["train"]
+        val_metrics: List[Dict[str, Any]] = fold_metrics[fold]["validation"]
+
+        ## The test metrics is a single dict with the metrics for the test split.
+        test_metrics: Dict[str, Any] = fold_metrics[fold]["test"]
+
+        ## Need to both save the metrics per fold and also aggregate them for the final report.
+
+        train_output_path = config.logging.metrics_path / f"fold_{fold}" / "train_metrics.json"
+        val_output_path = config.logging.metrics_path / f"fold_{fold}" / "validation_metrics.json"
+        test_output_path = config.logging.metrics_path / f"fold_{fold}" / "test_metrics.json"
+
+        ## TODO Move this functionality elsewhere. I don't think it belongs in the main code.
+
+        os.makedirs(train_output_path.parent, exist_ok=True)
+        os.makedirs(val_output_path.parent, exist_ok=True)
+        os.makedirs(test_output_path.parent, exist_ok=True)
+
+        with open(train_output_path, "w") as f:
+            json.dump(prepare_metrics_for_json(train_metrics), f, indent=4)
+
+        with open(val_output_path, "w") as f:
+            json.dump(prepare_metrics_for_json(val_metrics), f, indent=4)
+
+        with open(test_output_path, "w") as f:
+            json.dump(prepare_metrics_for_json([test_metrics]), f, indent=4)
+
+        _train_metrics.append(train_metrics)
+        _val_metrics.append(val_metrics)
+        _test_metrics.append(test_metrics)
+
+    ## Aggregate metrics for final report
+    ## TODO Move this functionality elsewhere. I don't think it belongs in the main code.
+
+    def aggregate_cv_metrics(fold_metrics: List[List[Dict[str, Any]]] | List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Aggregate metrics across CV folds by averaging per epoch.
+
+        Args:
+            fold_metrics: List of metrics per fold, where each fold contains a list of metric dicts per epoch
+
+        Returns:
+            List of dicts containing averaged metrics per epoch
+        """
+        # Handle single-epoch test metrics
+        if isinstance(fold_metrics[0], dict):
+            fold_metrics = [[m] for m in fold_metrics]
+
+        # Validate all folds have same number of epochs
+        n_epochs = len(fold_metrics[0])
+        if not all(len(fold) == n_epochs for fold in fold_metrics):
+            raise ValueError("All folds must have the same number of epochs")
+
+        # Validate all epochs have the same metric keys across folds
+        metric_keys = set(fold_metrics[0][0].keys())
+        for fold in fold_metrics:
+            for epoch_metrics in fold:
+                if set(epoch_metrics.keys()) != metric_keys:
+                    raise ValueError("All epochs must have the same metric keys")
+
+        # Initialize storage for aggregated metrics
+        aggregated_metrics = []
+
+        # For each epoch
+        for epoch in range(n_epochs):
+            epoch_metrics = defaultdict(list)
+
+            # Collect metrics from each fold for this epoch
+            for fold in fold_metrics:
+                for metric_name, value in fold[epoch].items():
+                    # Skip non-numeric values
+                    if isinstance(value, (int, float)):
+                        epoch_metrics[metric_name].append(value)
+
+            # Average metrics across folds
+            averaged_metrics = {metric_name: float(np.mean(values)) for metric_name, values in epoch_metrics.items()}
+
+            aggregated_metrics.append(averaged_metrics)
+
+        return aggregated_metrics
+
+    train_metrics = aggregate_cv_metrics(_train_metrics)
+    val_metrics = aggregate_cv_metrics(_val_metrics)
+    test_metrics = aggregate_cv_metrics(_test_metrics)
+
+    train_output_path = config.logging.metrics_path / "train_metrics_agg.json"
+    val_output_path = config.logging.metrics_path / "validation_metrics_agg.json"
+    test_output_path = config.logging.metrics_path / "test_metrics_agg.json"
+
+    with open(train_output_path, "w") as f:
+        json.dump(prepare_metrics_for_json(train_metrics), f, indent=4)
+    console.print(f"[green]✓[/] Saved aggregated train metrics to: {train_output_path}")
+
+    with open(val_output_path, "w") as f:
+        json.dump(prepare_metrics_for_json(val_metrics), f, indent=4)
+    console.print(f"[green]✓[/] Saved aggregated validation metrics to: {val_output_path}")
+
+    with open(test_output_path, "w") as f:
+        json.dump(prepare_metrics_for_json(test_metrics), f, indent=4)
+    console.print(f"[green]✓[/] Saved aggregated test metrics to: {test_output_path}")
 
     return model, experiment_data, fold_output_dir
 
@@ -726,7 +829,7 @@ def main(
 
         # Testing
         if config.experiment.is_test:
-            _test(
+            test(
                 model=model,
                 dataloaders=dataloaders,
                 loss_functions=loss_functions,
@@ -737,7 +840,7 @@ def main(
                 monitor=monitor,
             )
 
-            if hasattr(model, "get_embeddings"):
+            if hasattr(model, "get_embeddings") and "embeddings" in dataloaders:
                 console.print("[bold cyan]Generating embeddings for visualization...[/]")
                 embeddings = model.get_embeddings(dataloaders["embeddings"], device=device)
 
@@ -763,7 +866,7 @@ def main(
                         np.save(reconstructions_save_fp, reconstructions)
                         console.print(f"[green]✓[/] Saved reconstructions to: {reconstructions_save_fp}")
             else:
-                console.print("[bold yellow]![/] Model does not support gathering embeddings")
+                console.print("[bold yellow]![/] Model / Data configuration does not support gathering embeddings")
 
     finally:
         if monitor:

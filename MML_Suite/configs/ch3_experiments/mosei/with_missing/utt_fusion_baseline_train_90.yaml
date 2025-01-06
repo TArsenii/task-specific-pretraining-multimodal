@@ -1,11 +1,6 @@
-## Part of Chapter 3 experiments.
-## Configuration file for training the MMIN model with:
-## - Pretrained UttFusion model on MOSEI with the best model from the base model training
-## - Same data configuration as the UttFusion model
-## - Modalities are either present or not present in the pattern, 0% or 100% missing
 !StandardConfig
 experiment: !ExperimentConfig
-  name: "REDCORE BASE MODEL"
+  name: "UTT_FUSION BASE MODEL MOSEI Missing 90"
   device: "cuda"
   train_print_interval_epochs: 1
   validation_print_interval_epochs: 1
@@ -13,100 +8,43 @@ experiment: !ExperimentConfig
   is_test: true
 
 model: !ModelConfig
-  name: "RedCore"
-  model_type: "RedCore"
-  init_fn: "kaiming" ## TODO DOUBLE CHECK THIS
+  name: "UTT-Fusion"
+  model_type: "UttFusionModel"
   
-  netA: !Transformer
-    width: 74
-    layers: 3
-    heads: 8
-    embd_width: 96
-  netV: !Transformer
-    width: 35
-    layers: 3
-    heads: 8
-    embd_width: 96
-  netT: !Transformer
-    width: 768
-    layers: 3
-    heads: 8
-    embd_width: 96
-  netAE: !ResidualAE
-    layers: 
-      - 160
-      - 80
-      - 32
-    n_blocks: 5
-    input_dim: 288
-    dropout: 0.0
-    use_bn: false
-  netAV_T: !ResidualXE
-    layers: 
-      - 160
-      - 80
-      - 32
-    n_blocks: 5
-    input_dim: 192
-    output_dim: 96
-    dropout: 0.0
-    use_bn: false
-  netAT_V: !ResidualXE
-    layers: 
-      - 160
-      - 80
-      - 32
-    n_blocks: 5
-    input_dim: 192
-    output_dim: 96
-    dropout: 0.0
-    use_bn: false
-  netVT_A: !ResidualXE
-    layers: 
-      - 160
-      - 80
-      - 32
-    n_blocks: 5
-    input_dim: 192
-    output_dim: 96
-    dropout: 0.0
-    use_bn: false
+  netA: !LSTMEncoder
+    input_size: 74
+    hidden_size: 64
+    embd_method: "maxpool"
+
+  netV: !LSTMEncoder
+    input_size: 35
+    hidden_size: 64
+    embd_method: "maxpool"
+
+  netT: !TextCNN
+    input_size: 768
+    embd_size: 64
+    dropout: 0.7
+    in_channels: 1
+    out_channels: 128
+    kernel_heights: 
+      - 3
+      - 4
+      - 5
   netC: !FcClassifier
-    input_dim: 288
+    input_dim: 192
     layers: 
       - 96
-      - 96
+      - 48
     output_dim: 3
-    dropout: 0.5
+    dropout: 0.66
     use_bn: true
-  netC_A: !FcClassifier
-    input_dim: 96
-    layers: 
-      - 96
-      - 96
-    output_dim: 3
-    dropout: 0.5
-    use_bn: true
-  netC_V: !FcClassifier
-    input_dim: 288
-    layers: 
-      - 96
-      - 96
-    output_dim: 3
-    dropout: 0.5
-    use_bn: true
-  netC_T: !FcClassifier
-    input_dim: 288
-    layers: 
-      - 96
-      - 96
-    output_dim: 3
-    dropout: 0.5
-    use_bn: true
-  clip: 1.0
+
+  clip: 0.5
+
 
 training:
-  epochs: 30
+  epochs: 20
   batch_size: 256 
   early_stopping: false
   early_stopping_patience: 15
@@ -117,20 +55,18 @@ training:
     default_kwargs:
       lr: 2e-4
       weight_decay: 0.00001
-      betas: [0.9, 0.999]
   loss_functions: !LossFunctionGroup
     cross_entropy: 
       loss_name: "cross_entropy"
       loss_args: {}
       weight: 1.0
-    mse: 
-      loss_name: "mse"
-      loss_args: 
-        reduction: "sum"
-      weight: 4.0
-  scheduler: "cosine"
+  scheduler: "lambda"
   scheduler_args:
-    T_max: 30
+    lr_lambda: "max(min_lr, (1.0 - max(0, epoch + epoch_count - niter) / float(niter_decay + 1)))"
+    min_lr: 0.000001 # 1e-6
+    epoch_count: 1
+    niter: 10
+    niter_decay: 10
 
 data: !DataConfig
   datasets:
@@ -142,13 +78,13 @@ data: !DataConfig
       shuffle: true
       missing_patterns: !MissingPatternConfig
         modalities:
-          audio: !ModalityConfig
-            missing_rate: 0.1 
-          video: !ModalityConfig
-            missing_rate: 0.8 
-          text: !ModalityConfig 
-            missing_rate: 0.5 
-        selected_patterns: ["avt", "a", "v", "t", "av", "at", "vt"] ## one of these will be selected randomly for each item during training
+          !Modality audio: !ModalityConfig
+            missing_rate: 0.9  # Audio is ALWAYS present when included in pattern
+          !Modality video: !ModalityConfig
+            missing_rate: 0.9  # Video is ALWAYS present when included in pattern
+          !Modality text: !ModalityConfig 
+            missing_rate: 0.9  # Text is ALWAYS present when included in pattern
+        selected_patterns: ["avt"]  # Only use these combinations of modalities
       kwargs:
         labels_key: "classification_labels"
         aligned: true
@@ -160,11 +96,11 @@ data: !DataConfig
       target_modality: !Modality "MULTIMODAL"
       missing_patterns: !MissingPatternConfig
         modalities:
-          audio: !ModalityConfig
+          !Modality audio: !ModalityConfig
             missing_rate: 0.0  # Audio is ALWAYS present when included in pattern
-          video: !ModalityConfig
+          !Modality video: !ModalityConfig
             missing_rate: 0.0  # Video is ALWAYS present when included in pattern
-          text: !ModalityConfig 
+          !Modality text: !ModalityConfig 
             missing_rate: 0.0  # Text is ALWAYS present when included in pattern
         selected_patterns: ["avt", "a", "v", "t", "av", "at", "vt"]
       kwargs:
@@ -179,32 +115,13 @@ data: !DataConfig
       shuffle: true
       missing_patterns: !MissingPatternConfig
         modalities:
-          audio: !ModalityConfig
+          !Modality audio: !ModalityConfig
             missing_rate: 0.0  # Audio is ALWAYS present when included in pattern
-          video: !ModalityConfig
+          !Modality video: !ModalityConfig
             missing_rate: 0.0  # Video is ALWAYS present when included in pattern
-          text: !ModalityConfig 
+          !Modality text: !ModalityConfig 
             missing_rate: 0.0  # Text is ALWAYS present when included in pattern
         selected_patterns: ["avt", "a", "v", "t", "av", "at", "vt"]
-      kwargs:
-        aligned: true
-        labels_key: "classification_labels"
-
-    embeddings: !DatasetConfig
-      dataset: "mosei"
-      data_fp: "$EXP_PATH/DATA/mosei/aligned.pkl"
-      split: "test"
-      target_modality: !Modality "MULTIMODAL"
-      shuffle: true
-      missing_patterns: !MissingPatternConfig
-        modalities:
-          audio: !ModalityConfig
-            missing_rate: 0.0  # Audio is ALWAYS present when included in pattern
-          video: !ModalityConfig
-            missing_rate: 0.0  # Video is ALWAYS present when included in pattern
-          text: !ModalityConfig 
-            missing_rate: 0.0  # Text is ALWAYS present when included in pattern
-        selected_patterns: ["avt"]
       kwargs:
         aligned: true
         labels_key: "classification_labels"
@@ -244,7 +161,6 @@ metrics:
       kwargs:
         average: "micro"
         zero_division: 0
-      
       level: "epoch"
     Precision_Macro:
       function: "sklearn.metrics.precision_score"

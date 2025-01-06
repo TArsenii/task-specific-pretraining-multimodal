@@ -2,14 +2,17 @@ from collections import OrderedDict
 from dataclasses import dataclass, field
 from itertools import chain, combinations
 from pathlib import Path
+import traceback
 from typing import Any, Dict, List, Optional, Set
 
+from data.base_dataset import MultimodalBaseDataset
 from config.base_config import BaseConfig
 from experiment_utils.printing import get_console
 from experiment_utils.logging import get_logger
 from experiment_utils.utils import format_path_with_env
-from torch.utils.data import DataLoader, Dataset
-
+from torch.utils.data import DataLoader
+from modalities import Modality
+from inspect import signature
 from .resolvers import resolve_dataset_name
 
 logger = get_logger()
@@ -39,7 +42,7 @@ class ModalityConfig:
 class MissingPatternConfig:
     """Configuration for missing patterns"""
 
-    modalities: Dict[str, ModalityConfig] = field(default_factory=OrderedDict)
+    modalities: Dict[Modality, ModalityConfig] = field(default_factory=OrderedDict)
     selected_patterns: Optional[List[str]] = None
 
     def __post_init__(self):
@@ -63,13 +66,13 @@ class MissingPatternConfig:
         mod_combinations = sorted(mod_combinations, key=lambda x: (len(x), x))
         full_combination = mod_combinations[-1]
         full_combination = sorted(full_combination)
-        full_combination = "".join(m[0] for m in full_combination)
+        full_combination = "".join(str(m)[0] for m in full_combination)
 
         patterns = {}
 
         for combo in mod_combinations:
             combo = sorted(combo)
-            pattern_name = "".join(m[0] for m in combo)
+            pattern_name = "".join(str(m)[0] for m in combo)
 
             probs = {}
             for modality in all_mods:
@@ -176,7 +179,7 @@ class DatasetConfig(BaseConfig):
 
             # Validate dataset class
 
-            self._dataset_cls = resolve_dataset_name(self.dataset)
+            self._dataset_cls: type[MultimodalBaseDataset] = resolve_dataset_name(self.dataset)
 
             logger.info(f"Validated dataset class: {self.dataset}")
             console.print(f"[green]✓[/] Dataset class verified: {self._dataset_cls.__name__}")
@@ -199,16 +202,21 @@ class DatasetConfig(BaseConfig):
         logger.debug(f"DataLoader arguments: {args}")
         return args
 
-    def build_dataset(self) -> Dataset:
+    def build_dataset(self, batch_size: int) -> MultimodalBaseDataset:
         """Build the dataset instance."""
         try:
             dataset_args = self.get_dataset_args()
+
+            dataset_init_args = str(signature(self._dataset_cls.__init__))
+            if "batch_size" in dataset_init_args:
+                dataset_args["batch_size"] = batch_size
+
             dataset = self._dataset_cls(**dataset_args)
             logger.info(f"Created {self._dataset_cls.__name__} dataset for {self.split} split")
             console.print(f"[green]✓[/] Created dataset: {self._dataset_cls.__name__} ({len(dataset)} samples)")
             return dataset
         except Exception as e:
-            error_msg = f"Failed to create dataset: {str(e)}"
+            error_msg = f"Failed to create dataset: {traceback.format_exc()}"
             logger.error(error_msg)
             console.print(f"[red]✗[/] {error_msg}")
             raise e
@@ -220,6 +228,7 @@ class DataConfig(BaseConfig):
 
     datasets: Dict[str, DatasetConfig]
     default_batch_size: int = 32
+    use_collate_fn: bool = False
 
     def __post_init__(self):
         """Initialize and validate the configuration."""
@@ -266,17 +275,13 @@ class DataConfig(BaseConfig):
 
         try:
             dataset_config = self.datasets[target_split]
-
-            # Build the dataset
-            dataset = dataset_config.build_dataset()
-
-            # Get DataLoader arguments
             dataloader_args = dataset_config.get_dataloader_args()
+            batch_size = dataloader_args.get("batch_size", self.default_batch_size)
+            # Build the dataset
+            dataset = dataset_config.build_dataset(batch_size)
 
-            # Add collate function if available
-            if hasattr(dataset, "collate"):
-                dataloader_args["collate_fn"] = dataset.collate
-                logger.debug("Using custom collate function from dataset")
+            if self.use_collate_fn and hasattr(dataset, "collate_fn"):
+                dataloader_args["collate_fn"] = dataset.collate_fn
 
             # Create the DataLoader
             dataloader = DataLoader(dataset, **dataloader_args)
@@ -297,7 +302,7 @@ class DataConfig(BaseConfig):
         """Build DataLoaders for all configured splits."""
         dataloaders = {}
         for split in self.datasets:
-            if (split == "train" or split == "validation") and not is_train:
+            if (split == "train" or split == "trn" or split == "validation") and not is_train:
                 continue
 
             if split == "test" and not is_test:
@@ -307,4 +312,5 @@ class DataConfig(BaseConfig):
                 dataloaders[split] = self.build_dataloader(split)
             except Exception as e:
                 logger.error(f"Failed to build DataLoader for {split}: {str(e)}")
+                raise e
         return dataloaders

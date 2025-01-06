@@ -399,6 +399,8 @@ def split_missing_conditions(df: pd.DataFrame) -> dict[str, pd.DataFrame]:
     split_dfs = {}
     for condition in unique_conditions:
         matching_columns = [x for x in df.columns if x.endswith(f"_{condition}")]
+        if "loss" not in df.columns:
+            df["loss"] = 0
         split_df = df[["split", "loss"] + matching_columns]
         split_df = split_df.rename(columns={x: x.replace(f"_{condition}", "") for x in matching_columns})
         split_dfs[condition] = split_df

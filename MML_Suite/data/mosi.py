@@ -42,6 +42,7 @@ class MultimodalSentimentDataset(MultimodalBaseDataset):
         aligned: bool = False,
         length: Optional[int] = None,
         num_classes: Optional[int] = None,
+        batch_size: int = 1,
     ) -> None:
         """
         Initialize the Multimodal Sentiment Dataset.
@@ -59,20 +60,22 @@ class MultimodalSentimentDataset(MultimodalBaseDataset):
         """
         # Set up missing patterns
         m_patterns = missing_patterns or {
-            "atv": {"audio": 1.0, "text": 1.0, "video": 1.0},
-            "at": {"audio": 1.0, "text": 1.0, "video": 0.0},
-            "av": {"audio": 1.0, "text": 0.0, "video": 1.0},
-            "tv": {"audio": 0.0, "text": 1.0, "video": 1.0},
-            "a": {"audio": 1.0, "text": 0.0, "video": 0.0},
-            "t": {"audio": 0.0, "text": 1.0, "video": 0.0},
-            "v": {"audio": 0.0, "text": 0.0, "video": 1.0},
+            "atv": {Modality.AUDIO: 1.0, Modality.TEXT: 1.0, Modality.VIDEO: 1.0},
+            "at": {Modality.AUDIO: 1.0, Modality.TEXT: 1.0, Modality.VIDEO: 0.0},
+            "av": {Modality.AUDIO: 1.0, Modality.TEXT: 0.0, Modality.VIDEO: 1.0},
+            "tv": {Modality.AUDIO: 0.0, Modality.TEXT: 1.0, Modality.VIDEO: 1.0},
+            "a": {Modality.AUDIO: 1.0, Modality.TEXT: 0.0, Modality.VIDEO: 0.0},
+            "t": {Modality.AUDIO: 0.0, Modality.TEXT: 1.0, Modality.VIDEO: 0.0},
+            "v": {Modality.AUDIO: 0.0, Modality.TEXT: 0.0, Modality.VIDEO: 1.0},
         }
 
         # Override number of classes if specified
         if num_classes is not None:
             self.NUM_CLASSES = num_classes
 
-        super().__init__(split=split, selected_patterns=selected_patterns, missing_patterns=m_patterns)
+        super().__init__(
+            split=split, selected_patterns=selected_patterns, missing_patterns=m_patterns, batch_size=batch_size
+        )
 
         self.data_fp = Path(data_fp)
         self.aligned = aligned
@@ -93,10 +96,10 @@ class MultimodalSentimentDataset(MultimodalBaseDataset):
         # Load and validate data
         self.data = self._load_data(labels_key)
         self.num_samples = len(self.data["label"])
-
         # Set up pattern-specific indices for validation/test
         if split != "train":
             self.pattern_indices = {pattern: list(range(self.num_samples)) for pattern in self.selected_patterns}
+        self.masks = self._initialise_missing_masks(self.missing_patterns, len(self))
 
         logger.info(
             f"Initialized {self.__class__.__name__} dataset:"
@@ -169,14 +172,18 @@ class MultimodalSentimentDataset(MultimodalBaseDataset):
         Returns:
             Dict[str, Any]: A dictionary containing the sample data and metadata.
         """
-        pattern_name, sample_idx = self._get_pattern_and_sample_idx(idx)
-        pattern = self.missing_patterns[pattern_name]
+
+        _data = super().__getitem__(idx)
+
+        pattern_name, sample_idx = _data.pop("pattern"), _data.pop("sample_idx")
+        self.current_pattern = pattern_name
 
         sample = {
             "label": self.data["label"][sample_idx],
             "pattern_name": pattern_name,
             "missing_index": {},
             "sample_idx": sample_idx,
+            **_data,
         }
 
         if not self.aligned:
@@ -189,7 +196,7 @@ class MultimodalSentimentDataset(MultimodalBaseDataset):
             "text": (lambda: self.data[Modality.TEXT][sample_idx], Modality.TEXT),
         }
 
-        sample = self.get_sample_and_apply_mask(patterns=pattern, sample=sample, modality_loaders=modality_loaders)
+        sample = self.get_samples(sample=sample, modality_loaders=modality_loaders)
         return sample
 
     def collate_fn(self, batch: List[Dict[str, Any]]) -> Dict[str, Any]:

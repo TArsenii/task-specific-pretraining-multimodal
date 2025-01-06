@@ -203,7 +203,7 @@ class AVMNIST(MultimodalBaseDataset):
             "audio": (lambda x: self._load_audio(self.data.iloc[x][self.audio_column]), Modality.AUDIO),
             "image": (lambda x: self._load_image(self.data.iloc[x][self.image_column]), Modality.IMAGE),
         }
-        sample = self.get_sample_and_apply_mask(pattern, sample, modality_loaders, sample_idx)
+        sample = self.get_samples(pattern, sample, modality_loaders, sample_idx)
         return sample
 
     def get_pattern_batches(self, batch_size: int, **dataloader_kwargs) -> Dict[str, DataLoader]:

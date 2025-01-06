@@ -1,8 +1,8 @@
 import os
 import re
 import warnings
-from typing import Any, Dict, List, Optional
-
+from typing import Any, Dict, Iterable, List, Optional
+import numpy as np
 import h5py
 import torch
 from modalities import Modality
@@ -180,3 +180,35 @@ def safe_detach(tensor: Tensor | ndarray, to_np: bool = True) -> Tensor | ndarra
             return tensor.detach()
         case False:
             return tensor
+
+
+def prepare_metrics_for_json(metrics_list: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Convert metrics to JSON-serializable format, handling numpy types.
+    """
+
+    def convert_value(v):
+        if isinstance(
+            v,
+            (
+                np.int_,
+                np.intc,
+                np.intp,
+                np.int8,
+                np.int16,
+                np.int32,
+                np.int64,
+                np.uint8,
+                np.uint16,
+                np.uint32,
+                np.uint64,
+            ),
+        ):
+            return int(v)
+        elif isinstance(v, (np.float64, np.float16, np.float32, np.float64)):
+            return float(v)
+        elif isinstance(v, np.ndarray):
+            return v.tolist()
+        return v
+
+    return [{k: convert_value(v) for k, v in epoch_metrics.items()} for epoch_metrics in metrics_list]

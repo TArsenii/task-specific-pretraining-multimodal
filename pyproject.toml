@@ -38,6 +38,7 @@ opencv-contrib-python = "^4.10.0.84"
 mypy = "^1.13.0"
 umap = "^0.1.1"
 pytorch-warmup = "^0.2.0"
+torch-geometric = "^2.6.1"
 
 
 

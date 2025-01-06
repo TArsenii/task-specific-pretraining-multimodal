@@ -9,8 +9,7 @@ from experiment_utils.logging import get_logger
 from experiment_utils.utils import kaiming_init
 from torch import optim
 from torch.optim import lr_scheduler
-from torch.utils.data import Dataset
-from torch.nn import init
+from data.base_dataset import MultimodalBaseDataset
 
 logger = get_logger()
 console = get_console()
@@ -161,7 +160,7 @@ def resolve_scheduler(scheduler_name: str) -> Type[lr_scheduler._LRScheduler]:
     return scheduler_map[scheduler_name]
 
 
-def resolve_dataset_name(dataset_name: str) -> Type[Dataset]:
+def resolve_dataset_name(dataset_name: str) -> Type[MultimodalBaseDataset]:
     """
     Resolve dataset class from string
 

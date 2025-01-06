@@ -1,6 +1,6 @@
 !StandardConfig
 experiment: !ExperimentConfig
-  name: "UTT_FUSION BASE MODEL MOSEI"
+  name: "UTT_FUSION BASE MODEL MOSEI MONITORING"
   device: "cuda"
   train_print_interval_epochs: 1
   validation_print_interval_epochs: 1
@@ -40,8 +40,7 @@ model: !ModelConfig
     dropout: 0.66
     use_bn: true
 
-  clip: 1.0
-
+  clip: 0.5
 
 training:
   epochs: 20
@@ -227,7 +226,7 @@ logging:
     - "loss"
 
 monitoring:
-  enabled: false
+  enabled: true
   gradient_interval: 100
   activation_interval: 100
   weight_interval: 200

@@ -169,7 +169,7 @@ class MMIMDb(MultimodalBaseDataset):
             "image": (lambda idx: self._load_image(idx), Modality.IMAGE),
             "text": (lambda idx: self._load_text(idx), Modality.TEXT),
         }
-        sample = self.get_sample_and_apply_mask(pattern, sample, modality_loaders, idx=idx)
+        sample = self.get_samples(pattern, sample, modality_loaders, idx=idx)
         return sample
 
     def __len__(self) -> int:
