@@ -46,6 +46,7 @@ class MissingPatternConfig:
     selected_patterns: Optional[List[str]] = None
 
     def __post_init__(self):
+        ## Sort to ensure that the patterns are always in the same order
         if self.selected_patterns:
             self.selected_patterns = ["".join(sorted(p)) for p in self.selected_patterns]
 

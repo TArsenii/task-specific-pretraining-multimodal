@@ -37,7 +37,7 @@ class IEMOCAP(MultimodalBaseDataset):
         target_modality: Modality | str = Modality.MULTIMODAL,
         *,
         target_dir_fp_fmt: str = "target/{cv_no}",
-        norm_method: Literal["trn", "utt"] = "utt",
+        norm_method: Literal["trn", "utt"] = "trn",
         audio_type: Literal["comparE", "comparE_raw"] = "comparE",
         video_type: Literal["denseface"] = "denseface",
         text_type: Literal["bert", "bert_large"] = "bert_large",
@@ -124,6 +124,8 @@ class IEMOCAP(MultimodalBaseDataset):
             f"\n  Split: {split}"
             f"\n  Target Modality: {target_modality}"
             f"\n  Samples: {self.num_samples}"
+            f"\n  In-memory: {self.in_memory}"
+            f"\n  CV Number: {cv_no}"
             f"\n  Patterns: {', '.join(self.selected_patterns)}"
         )
 

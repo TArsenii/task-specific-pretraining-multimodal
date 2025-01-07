@@ -290,11 +290,9 @@ class RedCore(Module, MonitoringMixin, MultimodalModelProtocol):
         predictions = logits.argmax(dim=1)
         labels = safe_detach(labels)
         predictions = safe_detach(predictions)
-        for m_type in set(miss_types):
-            mask = miss_types == m_type
-            mask_preds = predictions[mask]
-            mask_labels = labels[mask]
-            metric_recorder.update(predictions=mask_preds, targets=mask_labels, modality=m_type)
+
+        metric_recorder.update_all(predictions=predictions, targets=labels, m_types=np.array(miss_types))
+
         return {
             "loss": loss.item(),
             "losses": {
@@ -448,11 +446,8 @@ class RedCore(Module, MonitoringMixin, MultimodalModelProtocol):
         predictions = logits.argmax(dim=1)
         labels = safe_detach(labels)
         predictions = safe_detach(predictions)
-        for m_type in set(miss_types):
-            mask = miss_types == m_type
-            mask_preds = predictions[mask]
-            mask_labels = labels[mask]
-            metric_recorder.update(predictions=mask_preds, targets=mask_labels, modality=m_type)
+        metric_recorder.update_all(predictions=predictions, targets=labels, m_types=np.array(miss_types))
+
         return {
             "loss": loss.item(),
             "losses": {

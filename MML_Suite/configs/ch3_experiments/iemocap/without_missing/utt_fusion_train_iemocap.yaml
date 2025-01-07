@@ -35,12 +35,11 @@ model: !ModelConfig
   netC: !FcClassifier
     input_dim: 384
     layers: 
-      - 256
       - 128
-      - 64
+      - 128
     output_dim: 4
-    dropout: 0.5
-    use_bn: true
+    dropout: 0.3
+    use_bn: false
   clip: 0.5
 
 training:
@@ -54,7 +53,7 @@ training:
     name: "Adam"
     default_kwargs:
       lr: 2e-4
-      weight_decay: 0.00001
+      weight_decay: 0.0000
       betas: [0.9, 0.999]
   loss_functions: !LossFunctionGroup
     cross_entropy: 
@@ -64,7 +63,7 @@ training:
   scheduler: "lambda"
   scheduler_args:
     lr_lambda: "max(min_lr, (1.0 - max(0, epoch + epoch_count - niter) / float(niter_decay + 1)))"
-    min_lr: 0.000001 # 1e-6
+    min_lr: 0.000001 
     epoch_count: 1
     niter: 10
     niter_decay: 10
@@ -86,7 +85,7 @@ data: !DataConfig
             missing_rate: 0.0  # Video is ALWAYS present when included in pattern
           !Modality text: !ModalityConfig 
             missing_rate: 0.0  # Text is ALWAYS present when included in pattern
-        selected_patterns: ["avt"]  # Only use these combinations of modalities
+        selected_patterns: ["atv"]
       kwargs: {}
     validation: !DatasetConfig
       dataset: "iemocap"
@@ -103,7 +102,7 @@ data: !DataConfig
             missing_rate: 0.0  # Video is ALWAYS present when included in pattern
           !Modality text: !ModalityConfig 
             missing_rate: 0.0  # Text is ALWAYS present when included in pattern
-        selected_patterns: ["avt", "a", "v", "t", "av", "at", "vt"]
+        selected_patterns: ["atv", "a", "v", "t", "av", "at", "vt"]
       kwargs: {}
 
     test: !DatasetConfig
@@ -121,7 +120,7 @@ data: !DataConfig
             missing_rate: 0.0  # Video is ALWAYS present when included in pattern
           !Modality text: !ModalityConfig 
             missing_rate: 0.0  # Text is ALWAYS present when included in pattern
-        selected_patterns: ["avt", "a", "v", "t", "av", "at", "vt"]
+        selected_patterns: ["atv", "a", "v", "t", "av", "at", "vt"]
       kwargs: {}
 
 metrics:
@@ -200,7 +199,7 @@ logging:
   log_path: "$EXP_PATH/experiments_output/{experiment_name}/logs/{run_id}"
   model_output_path: "$EXP_PATH/experiments_output/{experiment_name}/models/{run_id}"
   metrics_path: "$EXP_PATH/experiments_output/{experiment_name}/metrics/{run_id}"
-  save_metric: "loss"
+  save_metric: "F1_Macro_ATV"
   monitor_path: "$EXP_PATH/experiments_output/{experiment_name}/monitoring/{run_id}"
   tensorboard_path: "$EXP_PATH/experiments_output/{experiment_name}/tensorboard/{run_id}"
   tb_record_only:
