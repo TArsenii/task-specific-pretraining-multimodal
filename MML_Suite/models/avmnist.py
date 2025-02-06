@@ -256,9 +256,9 @@ class AVMNIST(Module, MultimodalMonitoringMixin):
 
     def train_step(
         self,
-        batch: Dict[str, Any],
+        batch: Dict[Any, Any],
         optimizer: Optimizer,
-        criterion: Module,
+        loss_functions: LossFunctionGroup,
         device: torch.device,
         metric_recorder: MetricRecorder,
         **kwargs,
@@ -286,7 +286,7 @@ class AVMNIST(Module, MultimodalMonitoringMixin):
         self.train()
         optimizer.zero_grad()
         logits = self.forward(A=A, I=I)
-        loss = criterion(logits, labels)
+        loss = loss_functions(logits, labels)
         loss.backward()
         optimizer.step()
 
@@ -300,7 +300,7 @@ class AVMNIST(Module, MultimodalMonitoringMixin):
     def validation_step(
         self,
         batch: Dict[str, Any],
-        criterion: LossFunctionGroup,
+        loss_functions: LossFunctionGroup,
         device: torch.device,
         metric_recorder: MetricRecorder,
         return_test_info: bool = False,
@@ -328,7 +328,7 @@ class AVMNIST(Module, MultimodalMonitoringMixin):
             )
 
             logits = self.forward(A=A, I=I)
-            loss = criterion(logits, labels)
+            loss = loss_functions(logits, labels)
             predictions = softmax(logits, dim=1).argmax(dim=1).detach().cpu().numpy()
             labels = labels.detach().cpu().numpy()
             miss_type = np.array(miss_type)

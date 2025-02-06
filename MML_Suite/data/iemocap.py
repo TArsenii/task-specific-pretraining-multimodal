@@ -69,7 +69,7 @@ class IEMOCAP(MultimodalBaseDataset):
             "t": {Modality.AUDIO: 0.0, Modality.TEXT: 1.0, Modality.VIDEO: 0.0},
             "v": {Modality.AUDIO: 0.0, Modality.TEXT: 0.0, Modality.VIDEO: 1.0},
         }
-        super().__init__(split=split, selected_patterns=selected_patterns, missing_patterns=m_patterns)
+        super().__init__(split=split, selected_patterns=selected_patterns, missing_patterns=m_patterns, _id=cv_no)
         assert 1 <= cv_no <= 10, "Cross-validation fold number must be in [1, 10]."
 
         root = Path(data_fp)

@@ -19,6 +19,7 @@ class MultimodalBaseDataset(Dataset):
         selected_patterns: Optional[List[str]] = None,
         missing_patterns: Optional[Dict[str, Dict[str, float]]] = None,
         batch_size: int = 1,
+        _id: int = 1,
     ) -> None:
         self.split = split.lower()
         assert split in self.VALID_SPLITS, f"Invalid split provided, must be one of {self.VALID_SPLITS}"
@@ -33,6 +34,9 @@ class MultimodalBaseDataset(Dataset):
         self.pattern_indices = None
         self._batch_size = batch_size
         self.current_pattern = None
+
+        assert isinstance(_id, int), "ID must be an integer."
+        self._id = _id
 
     def _initialise_missing_masks(
         self, missing_patterns: Optional[Dict[str, Dict[Modality, float]]], batch_size: int = 1
@@ -57,10 +61,10 @@ class MultimodalBaseDataset(Dataset):
         """Load data for each modality."""
         for _mod_name, (loader_fn, mod_enum) in modality_loaders.items():
             if self.target_modality == Modality.MULTIMODAL or self.target_modality == mod_enum:
-                sample[f"{str(mod_enum)}_original"] = loader_fn()
-                mask = sample[f"{str(mod_enum)}_missing_index"]
-                sample[str(mod_enum)] = sample[f"{str(mod_enum)}_original"] * mask
-                sample[f"{str(mod_enum)}_reverse"] = sample[f"{str(mod_enum)}_original"] * -1 * (mask - 1)
+                sample[f"{mod_enum}_original"] = loader_fn()
+                mask = sample[f"{mod_enum}_missing_index"]
+                sample[mod_enum] = sample[f"{mod_enum}_original"] * mask
+                sample[f"{mod_enum}_reverse"] = sample[f"{mod_enum}_original"] * -1 * (mask - 1)
 
         return sample
 

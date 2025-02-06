@@ -54,6 +54,7 @@ class AVMNIST(MultimodalBaseDataset):
         image_column: str = "image",
         labels_column: str = "label",
         split_indices: Optional[List[int]] = None,
+        _id: int = 1,
     ) -> None:
         """
         Initialize the AVMNIST dataset.
@@ -70,11 +71,11 @@ class AVMNIST(MultimodalBaseDataset):
             split_indices (Optional[List[int]]): Optional indices for dataset splitting.
         """
         m_patterns = missing_patterns or {
-            "ai": {"audio": 1.0, "image": 1.0},  # Both modalities present
-            "a": {"audio": 1.0, "image": 0.0},  # Audio only
-            "i": {"audio": 0.0, "image": 1.0},  # Image only
+            "ai": {Modality.AUDIO: 1.0, Modality.IMAGE: 1.0},  # Both modalities present
+            "a": {Modality.AUDIO: 1.0, Modality.IMAGE: 0.0},  # Audio only
+            "i": {Modality.AUDIO: 0.0, Modality.IMAGE: 1.0},  # Image only
         }
-        super().__init__(split=split, selected_patterns=selected_patterns, missing_patterns=m_patterns)
+        super().__init__(split=split, selected_patterns=selected_patterns, missing_patterns=m_patterns, _id=_id)
 
         assert split in AVMNIST.VALID_SPLITS, f"Invalid split provided, must be one of {AVMNIST.VALID_SPLITS}"
 
@@ -97,7 +98,19 @@ class AVMNIST(MultimodalBaseDataset):
         self._load_data(split_indices)
 
         self.num_samples = len(self.data)
-        self.set_pattern_indices(self.num_samples)
+
+        # Set up pattern-specific indices for validation/test
+        if split != "trn":
+            self.pattern_indices = {pattern: list(range(self.num_samples)) for pattern in self.selected_patterns}
+        self.masks = self._initialise_missing_masks(self.missing_patterns, len(self))
+
+        logger.info(
+            f"Initialized AVMNIST dataset:"
+            f"\n  Split: {split}"
+            f"\n  Target Modality: {target_modality}"
+            f"\n  Samples: {self.num_samples}"
+            f"\n  Patterns: {', '.join(self.selected_patterns)}"
+        )
 
         if isinstance(target_modality, str):
             target_modality = Modality.from_str(target_modality)
@@ -110,6 +123,7 @@ class AVMNIST(MultimodalBaseDataset):
             Modality.MULTIMODAL,
         ], "Invalid modality provided, must be one of [audio, image, multimodal]"
         self.target_modality = target_modality
+        self.masks = self._initialise_missing_masks(self.missing_patterns, len(self))
 
         logger.info(
             f"Initialized AVMNIST dataset:"
@@ -187,23 +201,27 @@ class AVMNIST(MultimodalBaseDataset):
         Returns:
             Dict[str, Any]: A dictionary containing the sample data and metadata.
         """
-        pattern_name, sample_idx = self._get_pattern_and_sample_idx(idx)
-        pattern = self.missing_patterns[pattern_name]
-        row = self.data.iloc[sample_idx]
 
+        _data = super().__getitem__(idx)
+        pattern_name, idx = _data.pop("pattern"), _data.pop("sample_idx")
+
+        self.current_pattern = pattern_name
+        label = self.data[self.labels_column].iloc[idx]
+        label = torch.tensor(label, dtype=torch.long)
         sample = {
-            "label": torch.tensor(row[self.labels_column]),
+            "label": label,
             "pattern_name": pattern_name,
             "missing_mask": {},
-            "sample_idx": sample_idx,
+            "sample_idx": idx,
+            **_data,
         }
 
-        # Load and apply masking for each modality
         modality_loaders = {
-            "audio": (lambda x: self._load_audio(self.data.iloc[x][self.audio_column]), Modality.AUDIO),
-            "image": (lambda x: self._load_image(self.data.iloc[x][self.image_column]), Modality.IMAGE),
+            "audio": (lambda: self._load_audio(self.data[self.audio_column].iloc[idx]), Modality.AUDIO),
+            "image": (lambda: self._load_image(self.data[self.image_column].iloc[idx]), Modality.IMAGE),
         }
-        sample = self.get_samples(pattern, sample, modality_loaders, sample_idx)
+
+        sample = self.get_samples(sample, modality_loaders)
         return sample
 
     def get_pattern_batches(self, batch_size: int, **dataloader_kwargs) -> Dict[str, DataLoader]:
@@ -242,7 +260,7 @@ class AVMNIST(MultimodalBaseDataset):
 
         collated = {
             "label": torch.stack([b["label"] for b in batch]),
-            "pattern_names": [b["pattern_name"] for b in batch],
+            "pattern_name": [b["pattern_name"] for b in batch],
             "missing_masks": {
                 mod: torch.tensor([b["missing_mask"][mod] for b in batch], device=device)
                 for mod in [Modality.AUDIO, Modality.IMAGE]

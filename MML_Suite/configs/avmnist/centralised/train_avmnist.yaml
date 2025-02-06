@@ -55,10 +55,14 @@ training:
     factor: 0.5
     patience: 5
     min_lr: 0.00001
-  
-  criterion: "cross_entropy"
+  loss_functions: !LossFunctionGroup
+    cross_entropy: 
+      loss_name: "cross_entropy"
+      loss_args: {}
+      weight: 1.0  
 
 data: !DataConfig
+  use_collate_fn: true
   datasets:
     train: !DatasetConfig
       dataset: "AVMNIST"
@@ -70,9 +74,9 @@ data: !DataConfig
       shuffle: true
       missing_patterns: !MissingPatternConfig
         modalities:
-          audio: !ModalityConfig
+          !Modality audio: !ModalityConfig
             missing_rate: 0.0
-          image: !ModalityConfig
+          !Modality image: !ModalityConfig
             missing_rate: 0.0
         selected_patterns: ["ai"]
     validation: !DatasetConfig
@@ -84,9 +88,9 @@ data: !DataConfig
       batch_size: 128
       missing_patterns: !MissingPatternConfig
         modalities:
-          audio: !ModalityConfig
+          !Modality audio: !ModalityConfig
             missing_rate: 0.0
-          image: !ModalityConfig
+          !Modality image: !ModalityConfig
             missing_rate: 0.0
         selected_patterns: ["ai", "a", "i"]
     test: !DatasetConfig
@@ -98,9 +102,9 @@ data: !DataConfig
       batch_size: 128
       missing_patterns: !MissingPatternConfig
         modalities:
-          audio: !ModalityConfig
+          !Modality audio: !ModalityConfig
             missing_rate: 0.0
-          image: !ModalityConfig
+          !Modality image: !ModalityConfig
             missing_rate: 0.0
         selected_patterns: ["ai", "a", "i"]
 metrics:
