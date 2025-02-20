@@ -1,4 +1,6 @@
 import yaml
+from models.kinetics_sounds import KineticsSoundsAudioEncoder, KineticsSoundsVideoEncoder
+from config.cmam_config import CMAMConfig
 from config.data_config import DataConfig, DatasetConfig, ModalityConfig, MissingPatternConfig
 from config.experiment_config import ExperimentConfig
 from config.logging_config import LoggingConfig
@@ -11,7 +13,7 @@ from experiment_utils.loss import LossFunctionGroup
 from experiment_utils.managers import CenterManager, FeatureManager, LabelManager
 from modalities import add_modality
 from models.avmnist import MNISTAudio, MNISTImage
-from models.conv import ConvBlockArgs
+from models.conv import ConvBlock, ConvBlockArgs
 from models.maxout import MaxOut
 from models.mmimdb import GMUModel, MLPGenreClassifier, MMIMDbModalityEncoder, GatedBiModalNetwork
 from models.msa.networks.autoencoder import ResidualAE, ResidualXE
@@ -22,6 +24,7 @@ from models.msa.networks.textcnn import TextCNN
 from models.msa.self_mm import AuViSubNet, Self_MM
 from models.msa.utt_fusion import UttFusionModel
 from models.msa.networks.transformer import Transformer
+from models.cmams import AssociationNetwork, InputEncoders
 
 logger = get_logger()
 
@@ -56,7 +59,9 @@ register_constructor("!ExperimentConfig", ExperimentConfig)
 register_constructor("!StandardConfig", StandardMultimodalConfig)
 register_constructor("!ParameterGroupConfig", ParameterGroupConfig)
 register_constructor("!Optimizer", OptimizerConfig, from_dict=True, deep=True)
-
+register_constructor("!CMAMConfig", CMAMConfig, deep=True)
+register_constructor("!AssociationNetwork", cls=AssociationNetwork, from_dict=True, deep=True)
+register_constructor("!InputEncoders", cls=InputEncoders, from_dict=True, deep=True)
 # Registering constructors for models and other components
 register_scalar_constructor("!Modality", add_modality)
 register_constructor(
@@ -70,10 +75,12 @@ register_constructor(
     deep=True,
 )
 register_constructor(
-    "!ConvBlock",
+    "!ConvBlockArgs",
     ConvBlockArgs,
     deep=True,
 )
+register_constructor("!ConvBlock", ConvBlock, deep=True)
+
 register_constructor(
     "!Self_MM",
     Self_MM,
@@ -137,6 +144,10 @@ register_constructor(
     MLPGenreClassifier,
     deep=True,
 )
+register_constructor("!KineticsSoundsAudioEncoder", cls=KineticsSoundsAudioEncoder, deep=True)
+register_constructor("!KineticsSoundsVideoEncoder", cls=KineticsSoundsVideoEncoder, deep=True)
+
+
 register_constructor(
     "!FeatureManager",
     FeatureManager,

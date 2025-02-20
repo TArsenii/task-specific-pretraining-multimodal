@@ -7,18 +7,25 @@ experiment: !ExperimentConfig
   is_train: true
   is_test: true
 
-target_modality: !Modality image
 
 model: !ModelConfig
   name: "AVMNIST"
   model_type: "AVMNIST"
+  pretrained_path: $EXP_PATH/experiments_output/AVMNIST_Multimodal_Training/models/{run_id}/best.pth
   audio_encoder: !MNISTAudio
-    conv_block_one_args: !ConvBlock
+    conv_block_one_one_args: !ConvBlock
       conv_one_in: 1
       conv_one_out: 32
-    conv_block_two_args: !ConvBlock
+    conv_block_one_two_args: !ConvBlock
       conv_one_in: 32
       conv_one_out: 32
+    conv_batch_norm: True
+    conv_block_two_one_args: !ConvBlock
+      conv_one_in: 32
+      conv_one_out: 64
+    conv_block_two_two_args: !ConvBlock
+      conv_one_in: 64
+      conv_one_out: 64
     conv_batch_norm: True
     hidden_dim: 64
   image_encoder: !MNISTImage
@@ -43,20 +50,30 @@ model: !ModelConfig
 cmam: !ModelConfig
   name: "CMAM"
   model_type: "CMAM"
+  target_modality: !Modality image
+  load_pretrained_encoder_state_for: []
+  pretrained_path: "experiments_output/AVMNIST_C_MAM_Audio_to_Image/models/{run_id}/best.pth"
   input_encoders: !InputEncoders
     !Modality audio: !MNISTAudio
-      conv_block_one_args: !ConvBlock
+      conv_block_one_one_args: !ConvBlock
         conv_one_in: 1
         conv_one_out: 32
-      conv_block_two_args: !ConvBlock
+      conv_block_one_two_args: !ConvBlock
         conv_one_in: 32
         conv_one_out: 32
       conv_batch_norm: True
+      conv_block_two_one_args: !ConvBlock
+        conv_one_in: 32
+        conv_one_out: 64
+      conv_block_two_two_args: !ConvBlock
+        conv_one_in: 64
+        conv_one_out: 64
+      conv_batch_norm: True
       hidden_dim: 64
-  association_net: !AssociationNetworkConfig
-    input_dim: 64
-    hidden_dim: 128
-    output_dim: 128
+  association_network: !AssociationNetwork
+    input_size: 64
+    hidden_size: 128
+    output_size: 128
     dropout: 0.4
     batch_norm: True
 
@@ -69,32 +86,35 @@ training:
   optimizer: !Optimizer
     name: "Adam"
     default_kwargs:
-      lr: 0.0005
-      weight_decay: 0.0001
-  scheduler: "plateau"
-  scheduler_kwargs:
-    mode: "min"
-    factor: 0.5
-    patience: 5
-    min_lr: 0.00001
-  
-  criterion: "cross_entropy"
+      lr: 0.001
+      weight_decay: 0.0
+  loss_functions: !LossFunctionGroup
+    cmam: 
+      loss_name: "cmam"
+      loss_kwargs: {
+        cosine_weight: 0.0,
+        mse_weight: 1.0,
+        mae_weight: 0.0,
+        cls_weight: 0.00
+      }
+      weight: 1.0
 
 data: !DataConfig
+  use_collate_fn: true
   datasets:
     train: !DatasetConfig
       dataset: "AVMNIST"
       data_fp: "$EXP_PATH/DATA/avmnist/train_subset.csv"
       split: "train"
       target_modality: !Modality "MULTIMODAL"
-      batch_size: 128
+      batch_size: 32
 
       shuffle: true
       missing_patterns: !MissingPatternConfig
         modalities:
-          audio: !ModalityConfig
+          !Modality audio: !ModalityConfig
             missing_rate: 0.0
-          image: !ModalityConfig
+          !Modality image: !ModalityConfig
             missing_rate: 0.0
         selected_patterns: ["ai"]
     validation: !DatasetConfig
@@ -103,28 +123,43 @@ data: !DataConfig
       split: "valid"
       target_modality: !Modality "MULTIMODAL"
       shuffle: true
-      batch_size: 128
+      batch_size: 32
       missing_patterns: !MissingPatternConfig
         modalities:
-          audio: !ModalityConfig
+          !Modality audio: !ModalityConfig
             missing_rate: 0.0
-          image: !ModalityConfig
+          !Modality image: !ModalityConfig
             missing_rate: 0.0
-        selected_patterns: ["a"]
+        selected_patterns: ["ai"]
     test: !DatasetConfig
       dataset: "AVMNIST"
       data_fp: "$EXP_PATH/DATA/avmnist/test_subset.csv"
       split: "test"
       target_modality: !Modality "MULTIMODAL"
       shuffle: true
-      batch_size: 128
+      batch_size: 32
       missing_patterns: !MissingPatternConfig
         modalities:
-          audio: !ModalityConfig
+          !Modality audio: !ModalityConfig
             missing_rate: 0.0
-          image: !ModalityConfig
+          !Modality image: !ModalityConfig
             missing_rate: 0.0
-        selected_patterns: ["a"]
+        selected_patterns: ["ai"]
+
+    embeddings: !DatasetConfig
+      dataset: "AVMNIST"
+      data_fp: "$EXP_PATH/DATA/avmnist/test_subset.csv"
+      split: "test"
+      target_modality: !Modality "MULTIMODAL"
+      shuffle: true
+      batch_size: 32
+      missing_patterns: !MissingPatternConfig
+        modalities:
+          !Modality audio: !ModalityConfig
+            missing_rate: 0.0
+          !Modality image: !ModalityConfig
+            missing_rate: 0.0
+        selected_patterns: ["ai"]
 
 metrics:
   metrics:
@@ -183,6 +218,19 @@ metrics:
       function: "sklearn.metrics.confusion_matrix"
       kwargs:
         labels: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+    mae:
+      function: "sklearn.metrics.mean_absolute_error"
+      kwargs: {}
+    mse:
+      function: "sklearn.metrics.mean_squared_error"
+      kwargs: {}
+    cosine:
+      function: "metrics.cosine_similarity"
+      kwargs: {}
+  groups:
+    classification: [ "accuracy", "balanced_accuracy", "f1_macro", "f1_micro", "f1_weighted", "precision_macro", "precision_micro", "precision_weighted", "recall_macro", "recall_micro", "recall_weighted"]
+    reconstruction: ["mae", "mse", "cosine"]
+
         
 
 logging:

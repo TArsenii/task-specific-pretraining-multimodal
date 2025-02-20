@@ -234,16 +234,14 @@ class CMAMLoss(nn.Module):
         """
         cosine_sim = self.cosine_similarity(predictions, targets).mean()
         # cosine_loss = -cosine_sim if self.maximize_cosine else cosine_sim
-        cosine_loss = 1 - cosine_sim
-        mae = self.mae_loss(predictions, targets)
-        mse = self.mse_loss(predictions, targets)
+        cosine_loss = (1 - cosine_sim) * self.cosine_weight
+        mae = self.mae_loss(predictions, targets) * self.mae_weight
+        mse = self.mse_loss(predictions, targets) * self.mse_weight
 
-        total_loss = (
-            self.cosine_weight * cosine_loss + self.mae_weight * mae + self.mse_weight * mse
-        ) * self.rec_weight
+        total_loss = cosine_loss + mae + mse
 
         loss_dict = {
-            "cosine_sim": cosine_sim,
+            "cosine": cosine_loss,
             "mae": mae,
             "mse": mse,
         }

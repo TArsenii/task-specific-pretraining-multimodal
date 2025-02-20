@@ -3,7 +3,7 @@ from collections.abc import Callable
 from typing import Type
 
 from models.protocols import MultimodalModelProtocol
-from data import AVMNIST, IEMOCAP, MOSEI, MOSI, MSP_IMPROV, MMIMDb
+from data import AVMNIST, IEMOCAP, MOSEI, MOSI, MSP_IMPROV, MMIMDb, KineticsSounds
 from experiment_utils.printing import get_console
 from experiment_utils.logging import get_logger
 from experiment_utils.utils import kaiming_init
@@ -61,7 +61,18 @@ def resolve_model_name(_type: str) -> Type[MultimodalModelProtocol]:
             from models.cmams import CMAM
 
             return CMAM
+        case "kineticssounds":
+            from models.kinetics_sounds import KineticsSounds
 
+            return KineticsSounds
+        case "kinetics_sounds_audio_encoder":
+            from models.kinetics_sounds import KineticsSoundsAudioEncoder
+
+            return KineticsSoundsAudioEncoder
+        case "kinetics_sounds_video_encoder":
+            from models.kinetics_sounds import KineticsSoundsVideoEncoder
+
+            return KineticsSoundsVideoEncoder
         case _:
             raise ValueError(f"Unknown model type: {_type}")
 
@@ -178,6 +189,7 @@ def resolve_dataset_name(dataset_name: str) -> Type[MultimodalBaseDataset]:
         "iemocap": IEMOCAP,
         "msp_improv": MSP_IMPROV,
         "mm_imdb": MMIMDb,
+        "kinetics_sounds": KineticsSounds,
     }
 
     dataset_name = dataset_name.lower()

@@ -1,20 +1,221 @@
+import logging
 import os
 import re
 import warnings
-from typing import Any, Dict, Iterable, List, Optional
-import numpy as np
+from dataclasses import dataclass
+from enum import Enum
+from typing import Any, Dict, List, Optional, TypeVar, Union
+
 import h5py
+import numpy as np
 import torch
 from modalities import Modality
 from numpy import ndarray
 from torch import Tensor
 from torch.nn import BatchNorm2d, Conv2d, Linear, Module, init
+from typing_extensions import TypeGuard
 
 from .printing import get_console
 
 console = get_console()
 
+torch.set_default_dtype(torch.float32)
+
 PARAMETER_SIZE_BYTES: int = 4  # Size of a float parameter in bytes
+
+
+T = TypeVar("T")  # Return type
+
+
+class AccessErrorType(Enum):
+    KEY_ERROR = "key_error"
+    TYPE_ERROR = "type_error"
+    MAX_DEPTH_EXCEEDED = "max_depth_exceeded"
+    VALIDATION_ERROR = "validation_error"
+
+
+@dataclass
+class AccessError(BaseException):
+    """Represents an error that occurred during nested dictionary access."""
+
+    error_type: AccessErrorType
+    path: str
+    failed_key: str
+    available_keys: Optional[List[str]]
+    attempted_path: List[Union[str, int]]
+    message: str
+    original_error: Optional[Exception] = None
+
+    def __str__(self) -> str:
+        parts = [
+            f"Failed to access nested data at path '{self.path}'",
+            f"Error type: {self.error_type.value}",
+            f"Failed key: '{self.failed_key}'",
+        ]
+
+        if self.available_keys is not None:
+            parts.append(f"Available keys: {self.available_keys}")
+
+        parts.append(f"Attempted path: {' -> '.join(str(k) for k in self.attempted_path)}")
+
+        return " | ".join(parts)
+
+    def format_multiline(self) -> str:
+        """Returns a multiline formatted version of the error"""
+        parts = [
+            f"Failed to access nested data at path '{self.path}'",
+            f"Error type: {self.error_type.value}",
+            f"Failed key: '{self.failed_key}'",
+        ]
+
+        if self.available_keys is not None:
+            parts.append(f"Available keys: {self.available_keys}")
+
+        parts.append(f"Attempted path: {' -> '.join(str(k) for k in self.attempted_path)}")
+
+        return "\n".join(parts)
+
+
+def is_valid_dict(obj: Any) -> TypeGuard[Dict]:
+    """Type guard to check if an object is a valid dictionary."""
+    return isinstance(obj, dict)
+
+
+class NestedDictAccess:
+    """
+    Provides safe access to nested dictionary structures with detailed error reporting.
+    """
+
+    def __init__(self, max_depth: int = 20, logger: Optional[logging.Logger] = None, raise_on_error: bool = True):
+        """
+        Initialize the nested dictionary accessor.
+
+        Args:
+            max_depth: Maximum allowed depth for nested access
+            logger: Optional logger for error logging
+            raise_on_error: If True, raises exceptions; if False, returns Result object
+        """
+        self.max_depth = max_depth
+        self.logger = logger or logging.getLogger(__name__)
+        self.raise_on_error = raise_on_error
+
+    def _validate_depth(self, depth: int, keys: List[Any]) -> None:
+        """Check if the access depth exceeds the maximum allowed depth."""
+        if depth > self.max_depth:
+            raise ValueError(f"Maximum depth of {self.max_depth} exceeded. " f"Attempted depth: {depth}")
+
+    def _format_path(self, path: List[Any]) -> str:
+        """Format the current path for error reporting."""
+        return ".".join(str(k) for k in path)
+
+    def get(
+        self, data: Dict, keys: List[Union[str, int]], default: Optional[T] = None, validator: Optional[callable] = None
+    ) -> Union[T, AccessError]:
+        """
+        Safely access nested dictionary values with detailed error reporting.
+        Allows non-dictionary values for the final key in the path.
+        """
+        current_data = data
+        path: List[Union[str, int]] = []
+
+        try:
+            self._validate_depth(len(keys), keys)
+
+            for i, key in enumerate(keys):
+                # Only check for dictionary type if this isn't the last key
+                if i < len(keys) - 1 and not is_valid_dict(current_data):
+                    error = AccessError(
+                        error_type=AccessErrorType.TYPE_ERROR,
+                        path=self._format_path(path),
+                        failed_key=str(key),
+                        available_keys=None,
+                        attempted_path=keys,
+                        message=f"Expected dictionary at intermediate path, got {type(current_data)}",
+                    )
+                    self.logger.error(str(error))
+                    if self.raise_on_error:
+                        raise TypeError(str(error))
+                    raise error
+
+                try:
+                    current_data = current_data[key]
+                    path.append(key)
+                except (KeyError, IndexError, TypeError) as e:
+                    # Handle different types of access errors
+                    available_keys = list(current_data.keys()) if is_valid_dict(current_data) else None
+                    error = AccessError(
+                        error_type=AccessErrorType.KEY_ERROR,
+                        path=self._format_path(path),
+                        failed_key=str(key),
+                        available_keys=available_keys,
+                        attempted_path=keys,
+                        message=f"Failed to access key/index '{key}': {str(e)}",
+                    )
+                    self.logger.error(str(error))
+                    if self.raise_on_error:
+                        raise KeyError(str(error))
+                    raise error
+
+            if validator is not None and not validator(current_data):
+                error = AccessError(
+                    error_type=AccessErrorType.VALIDATION_ERROR,
+                    path=self._format_path(path),
+                    failed_key=str(keys[-1]),
+                    available_keys=None,
+                    attempted_path=keys,
+                    message="Value failed validation",
+                )
+                self.logger.error(str(error))
+                if self.raise_on_error:
+                    raise ValueError(str(error))
+                raise error
+
+            return current_data
+
+        except Exception as e:
+            if not isinstance(e, (TypeError, KeyError, ValueError, IndexError)):
+                self.logger.exception("Unexpected error during nested access")
+                error = AccessError(
+                    error_type=AccessErrorType.TYPE_ERROR,
+                    path=self._format_path(path),
+                    failed_key=str(keys[len(path)]) if len(path) < len(keys) else "",
+                    available_keys=None,
+                    attempted_path=keys,
+                    message=str(e),
+                    original_error=e,
+                )
+                if self.raise_on_error:
+                    raise
+                return error
+
+            raise
+
+
+def flatten_dict(data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Flatten a nested dictionary.
+
+    Args:
+    - data (Dict[str, Any]): Input dictionary.
+
+    Returns:
+    - Dict[str, Any]: Flattened dictionary.
+    """
+
+    out_dict = {}
+
+    def _flatten_dict(data, parent_key=""):
+        for k, v in data.items():
+            new_key = k
+            # new_key = f"{parent_key}.{k}" if parent_key else k
+            if isinstance(v, dict):
+                _flatten_dict(v, new_key)
+            else:
+                out_dict[new_key] = v
+
+    _flatten_dict(data)
+
+    return out_dict
 
 
 def hdf5_to_dict(f: h5py.File) -> Dict[str, Any]:
@@ -205,7 +406,7 @@ def prepare_metrics_for_json(metrics_list: List[Dict[str, Any]]) -> List[Dict[st
             ),
         ):
             return int(v)
-        elif isinstance(v, (np.float64, np.float16, np.float32, np.float64)):
+        elif isinstance(v, (np.float64, np.float16, np.float32)):
             return float(v)
         elif isinstance(v, np.ndarray):
             return v.tolist()

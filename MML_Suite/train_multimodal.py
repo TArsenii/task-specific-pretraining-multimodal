@@ -26,7 +26,13 @@ from experiment_utils.loss import LossFunctionGroup
 from experiment_utils.metric_recorder import MetricRecorder
 from experiment_utils.monitoring import ExperimentMonitor
 from experiment_utils.printing import EnhancedConsole, get_console
-from experiment_utils.utils import PARAMETER_SIZE_BYTES, clean_checkpoints, gpu_memory, prepare_metrics_for_json
+from experiment_utils.utils import (
+    PARAMETER_SIZE_BYTES,
+    clean_checkpoints,
+    flatten_dict,
+    gpu_memory,
+    prepare_metrics_for_json,
+)
 from modalities import add_modality
 from models.protocols import MultimodalModelProtocol
 from rich import box
@@ -451,7 +457,8 @@ def _train_loop(
             metric_recorder=metric_recorder,
             monitor=monitor,
         )
-        train_metrics = metric_recorder.calculate_metrics(metric_group="Train", epoch=epoch, loss=train_loss)
+        train_metrics = metric_recorder.calculate_all_groups(epoch=epoch, loss=train_loss)
+        train_metrics = flatten_dict(train_metrics)
         train_metrics["loss"] = train_loss
         experiment_data["metrics_history"]["train"].append(train_metrics.copy())
         experiment_data["timing_history"]["train"].append(train_time)
@@ -468,7 +475,8 @@ def _train_loop(
             monitor=monitor,
             task_name="Validation",
         )
-        val_metrics = metric_recorder.calculate_metrics(metric_group="Validation", epoch=epoch, loss=val_loss)
+        val_metrics = metric_recorder.calculate_all_groups(epoch=epoch, loss=val_loss)
+        val_metrics = flatten_dict(val_metrics)
         val_metrics["loss"] = val_loss
         experiment_data["metrics_history"]["validation"].append(val_metrics.copy())
         experiment_data["timing_history"]["validation"].append(val_time)
@@ -575,7 +583,8 @@ def test(
                 task_name=f"Testing {split_name}",
             )
 
-        metrics = metric_recorder.calculate_metrics(loss=test_loss, skip_tensorboard=True)
+        metrics = metric_recorder.calculate_all_groups(loss=test_loss, skip_tensorboard=True)
+        metrics = flatten_dict(metrics)
         metrics.update({k: np.mean(v) for k, v in test_loss_info.items()})
         experiment_data["metrics_history"][split_name] = metrics
         experiment_data["timing_history"][split_name] = [test_time]
@@ -846,9 +855,22 @@ def main(
 
                 if embeddings is not None and isinstance(embeddings, dict):
                     for modality, embds in embeddings.items():
-                        save_fp = config.logging.metrics_path / "embeddings" / f"{modality}_embeddings.npy"
+                        if not isinstance(modality, str) and isinstance(embds, list):
+                            embds = np.concatenate(embds, axis=0)
+                            console.print(f"Embeddings shape: {embds.shape}")
+
+                        if isinstance(modality, str):
+                            ## We're dealing with labels
+                            save_fp = config.logging.metrics_path / "embeddings" / "labels.npy"
+                        else:
+                            save_fp = config.logging.metrics_path / "embeddings" / f"{modality}_embeddings.npy"
                         os.makedirs(save_fp.parent, exist_ok=True)
-                        np.save(save_fp, embds)
+                        try:
+                            np.save(save_fp, embds)
+                        except Exception as e:
+                            console.print(f"[bold red]Error saving embeddings: {e}[/]")
+                            console.print(f"Embedings shape: {len(embds)}")
+                            raise e
                         console.print(f"[green]✓[/] Saved {modality} embeddings to: {save_fp}")
                 elif embeddings is not None and isinstance(embeddings, tuple):
                     embeddings, reconstructions = embeddings

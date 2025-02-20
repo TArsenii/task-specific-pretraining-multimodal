@@ -19,7 +19,7 @@ class ConvBlock(Module):
         conv_block_one_args: ConvBlockArgs,
         conv_block_two_args: ConvBlockArgs,
         batch_norm: bool = True,
-    ) -> "ConvBlock":
+    ) -> None:
         super(ConvBlock, self).__init__()
         self.conv_one = Conv2d(
             conv_block_one_args.conv_one_in,

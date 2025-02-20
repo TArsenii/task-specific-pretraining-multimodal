@@ -1,7 +1,10 @@
-from typing import Any, Dict
-
+from __future__ import annotations
+from collections import defaultdict
+from typing import Any, Dict, List, Optional
+from torch import Tensor
 import numpy as np
 import torch
+from experiment_utils.loss import LossFunctionGroup
 from cmam_loss import CMAMLoss
 from config.resolvers import resolve_encoder
 from experiment_utils.metric_recorder import MetricRecorder
@@ -19,7 +22,11 @@ from torch.nn import (
     ReLU,
     Sequential,
 )
+from torch.utils.data import DataLoader
+from experiment_utils.printing import get_console
 from torch.optim import Optimizer
+
+console = get_console()
 
 
 class AssociationNetwork(Module):
@@ -36,12 +43,24 @@ class AssociationNetwork(Module):
             Linear(hidden_size, output_size),
         )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    @staticmethod
+    def from_dict(data: Dict[str, Any]) -> AssociationNetwork:
+        return AssociationNetwork(
+            input_size=data["input_size"],
+            hidden_size=data["hidden_size"],
+            output_size=data["output_size"],
+            batch_norm=data.get("batch_norm", False),
+            dropout=data.get("dropout", 0.0),
+        )
+
+    def forward(self, x: Tensor) -> Tensor:
         return self.assoc_net(x)
 
 
 class InputEncoders(Dict[Modality, Module]):
-    pass
+    @staticmethod
+    def from_dict(data: Dict[str, Any]) -> InputEncoders:
+        return InputEncoders({k: v for k, v in data.items()})
 
 
 class CMAM(Module):
@@ -53,10 +72,11 @@ class CMAM(Module):
         *,
         fusion_fn: str = "concat",
         grad_clip: float = 0.0,
-        metric_recorder: MetricRecorder,
+        labels_key: str = "labels",
+        **kwargs,
     ) -> None:
         super(CMAM, self).__init__()
-        self.input_encoders = ModuleDict(input_encoders)
+        self.encoders = ModuleDict({str(k): v for k, v in input_encoders.items()})
         self.association_network = association_network
 
         match fusion_fn.lower():
@@ -70,33 +90,96 @@ class CMAM(Module):
                 raise ValueError(f"Unknown fusion function: {fusion_fn}")
 
         self.target_modality = target_modality
-
         self.grad_clip = grad_clip
-        self.metric_recorder = metric_recorder
+        self.labels_key = labels_key
+
+    def load_encoder_state_for(self, encoders_state: Dict[Modality, dict]) -> None:
+        for modality, state in encoders_state.items():
+            self.encoders[str(modality)].load_state_dict(state)
+            console.print(f"Loaded state for {modality}")
+
+    def display(self) -> str:
+        ## get parameter counts for each component of the model
+        encoder_params = {
+            modality: sum(p.numel() for p in encoder.parameters()) for modality, encoder in self.encoders.items()
+        }
+        assoc_params = sum(p.numel() for p in self.association_network.parameters())
+
+        encoder_params_size_mb = sum(encoder_params.values()) * 4 / 1024 / 1024
+        total_params = sum(encoder_params.values()) + assoc_params
+
+        assoc_params_size_mb = assoc_params * 4 / 1024 / 1024
+
+        return f"CMAM Model: \n\tTotal Parameters: {total_params} \n\tEncoder Parameters: {encoder_params} ({encoder_params_size_mb:.2f} MB) \n\tAssociation Network Parameters: {assoc_params} ({assoc_params_size_mb:.2f} MB)"
 
     def to(self, device):
         super().to(device)
-        self.input_encoders.to(device)
+        self.encoders.to(device)
         self.association_network.to(device)
         return self
 
     def reset_metric_recorders(self):
         self.metric_recorder.reset()
 
-    def forward(self, modalities: Dict[Modality, torch.Tensor]) -> torch.Tensor:
-        embeddings = [encoder(data) for encoder, data in zip(self.input_encoders.values(), modalities.values())]
+    def forward(self, modalities: Dict[Modality, Tensor]) -> Tensor:
+        embeddings = [encoder(data) for encoder, data in zip(self.encoders.values(), modalities.values())]
         z = self.fusion_fn(embeddings, dim=1)
         return self.association_network(z)
 
+    def get_embeddings(
+        self,
+        dataloader: DataLoader,
+        trained_model,
+        device: torch.device,
+    ) -> Dict[Modality, np.ndarray]:
+        console.print("Getting embeddings...")
+        self.to(device)
+        self.eval()
+        trained_model.to(device)
+
+        batch_data = defaultdict(list)
+
+        for batch in dataloader:
+            with torch.no_grad():
+                target_modality = batch[self.target_modality].float().to(device)
+                input_modalities = {
+                    modality: batch[Modality.from_str(modality)].float().to(device) for modality in self.encoders
+                }
+                labels = batch[self.labels_key].to(device)
+
+                ## get the target
+                trained_model.to(device)
+                target_modality = target_modality.to(device)
+                trained_encoder = trained_model.get_encoder(self.target_modality)
+                target_embd = trained_encoder(target_modality)
+                rec_embd = self.forward(input_modalities)
+
+                batch_data[self.labels_key].append(labels.cpu().numpy())
+                batch_data["rec_embd"].append(rec_embd.cpu().numpy())
+                batch_data["target_embd"].append(target_embd.cpu().numpy())
+
+        labels = np.concatenate(batch_data[self.labels_key], axis=0)
+        rec_embd = np.concatenate(batch_data["rec_embd"], axis=0)
+        target_embd = np.concatenate(batch_data["target_embd"], axis=0)
+
+        console.print(f"[bold green]Embeddings retrieved![/] Rec: {rec_embd.shape}, Target: {target_embd.shape}")
+
+        return {
+            self.labels_key: labels,
+            "rec_embd": rec_embd,
+            "target_embd": target_embd,
+        }
+
     def train_step(
         self,
-        batch: Dict[Modality, torch.Tensor],
-        labels: torch.Tensor,
-        criterion: CMAMLoss,
+        batch: Dict[Modality, Tensor],
+        loss_functions: LossFunctionGroup,
         optimizer: Optimizer,
         device: torch.device,
         trained_model: MultimodalModelProtocol,
-        logits_transform: callable = lambda x: x.argmax(dim=1),
+        metric_recorder: MetricRecorder,
+        *,
+        epoch: int = 0,
     ):
         self.train()
         self.to(device)
@@ -106,9 +189,20 @@ class CMAM(Module):
             modality: batch[Modality.from_str(modality)].float().to(device) for modality in self.encoders
         }
 
-        mi_input_modalities = [v.clone() for k, v in input_modalities.items()]
+        other_modalities = {
+            k: v
+            for k, v in batch.items()
+            if isinstance(k, Modality) and k != self.target_modality and str(k) not in self.encoders
+        }
 
-        labels = labels.to(device)
+        mi_input_modalities = [v.clone() for k, v in input_modalities.items()]
+        try:
+            labels = batch[self.labels_key].to(device)
+        except KeyError as _:
+            console.error(f"Failed to find key 'labels' in batch, available keys: {batch.keys()}")
+            exit(1)
+
+        miss_type = batch["pattern_name"]
 
         # Get the target embedding without computing gradients
         with torch.no_grad():
@@ -129,23 +223,31 @@ class CMAM(Module):
 
         # Compute reconstruction loss
 
+        other_modalities = {str(k)[0]: v.to(device=device) for k, v in other_modalities.items()}
+
         # Prepare input for the pretrained model
         encoder_data = {str(k)[0].upper(): batch[Modality.from_str(k)].to(device=device) for k in self.encoders.keys()}
         m_kwargs = {
             **encoder_data,
             f"{str(self.target_modality)[0]}": rec_embd.to(device=device),
             f"is_embd_{str(self.target_modality)[0]}": True,
+            **other_modalities,
         }
         # Compute logits without torch.no_grad()
-        logits = trained_model(**m_kwargs, device=device)
+        logits = trained_model(**m_kwargs)
+
+        logits_transform = (
+            trained_model.logits_transform if hasattr(trained_model, "logits_transform") else lambda x: x.argmax(dim=1)
+        )
+
         predictions = logits_transform(logits)
 
-        self.metric_recorder.update(predictions, labels)
-        metrics = self.metric_recorder.calculate_metrics()
+        metric_recorder.update_group_all("classification", predictions, labels, miss_type)
+        metric_recorder.update_group_all("reconstruction", rec_embd, target_embd, miss_type)
 
         # Total loss and backward pass
-        loss_dict = criterion(
-            predictions=rec_embd,
+        loss_dict = loss_functions(
+            inputs=rec_embd,
             targets=target_embd,
             originals=mi_input_modalities,
             reconstructed=rec_embd,
@@ -166,19 +268,17 @@ class CMAM(Module):
 
         return {
             "loss": total_loss.item(),
-            **other_losses,
-            **metrics,
+            "losses": other_losses,
         }
 
-    def evaluate(
+    def validation_step(
         self,
-        batch,
-        labels,
-        criterion: CMAMLoss,
-        device,
-        trained_model,
-        logits_transform: callable = lambda x: x.argmax(dim=1),
-        return_eval_data=False,
+        batch: Dict[Modality, Tensor],
+        loss_functions: LossFunctionGroup,
+        device: torch.device,
+        trained_model: MultimodalModelProtocol,
+        metric_recorder: MetricRecorder,
+        return_eval_data: bool = False,
     ):
         self.eval()
         trained_model.eval()
@@ -189,10 +289,15 @@ class CMAM(Module):
             input_modalities = {
                 modality: batch[Modality.from_str(modality)].float().to(device) for modality in self.encoders
             }
-            mi_input_modalities = [v.clone() for k, v in input_modalities.items()]
-            miss_type = batch["miss_type"]  ## should be a list of the same string/miss_type
+            other_modalities = {
+                k: v
+                for k, v in batch.items()
+                if isinstance(k, Modality) and k != self.target_modality and str(k) not in self.encoders
+            }
 
-            labels = labels.to(device)
+            mi_input_modalities = [v.clone() for k, v in input_modalities.items()]
+            miss_type = batch["pattern_name"]  ## should be a list of the same string/miss_type
+            labels = batch[self.labels_key].to(device)
 
             ## get the target
             trained_model.to(device)
@@ -204,17 +309,27 @@ class CMAM(Module):
             encoder_data = {
                 str(k)[0].upper(): batch[Modality.from_str(k)].to(device=device) for k in self.encoders.keys()
             }
+
+            other_modalities = {str(k)[0]: v.to(device=device) for k, v in other_modalities.items()}
+
             m_kwargs = {
                 **encoder_data,
                 f"{str(self.target_modality)[0]}": rec_embd.to(device=device),
                 f"is_embd_{str(self.target_modality)[0]}": True,
+                **other_modalities,
             }
-            logits = trained_model(**m_kwargs, device=device)
+            logits = trained_model(**m_kwargs)
+
+            logits_transform = (
+                trained_model.logits_transform
+                if hasattr(trained_model, "logits_transform")
+                else lambda x: x.argmax(dim=1)
+            )
             predictions = logits_transform(logits)
 
             ## compute all the losses
-            loss_dict = criterion(
-                predictions=rec_embd,
+            loss_dict = loss_functions(
+                inputs=rec_embd,
                 targets=target_embd,
                 originals=mi_input_modalities,  ## None for now since they refer to the original and reconstructed data for Cyclic Consistency Loss
                 reconstructed=rec_embd,
@@ -226,43 +341,34 @@ class CMAM(Module):
             total_loss = loss_dict["total_loss"]
             other_losses = {k: v.item() for k, v in loss_dict.items() if k != "total_loss"}
 
-            metrics = self.metric_recorder.calculate_metrics(predictions, labels)
             miss_type = np.array(miss_type)
-
-            for m_type in set(miss_type):
-                mask = miss_type == m_type
-                mask_preds = predictions[mask]
-                mask_labels = labels[mask]
-                mask_metrics = self.metric_recorder.calculate_metrics(
-                    predictions=mask_preds,
-                    targets=mask_labels,
-                    skip_metrics=["ConfusionMatrix"],
-                )
-                for k, v in mask_metrics.items():
-                    metrics[f"{k}_{m_type.replace('z', '').upper()}"] = v
+            metric_recorder.update_group_all(
+                predictions=predictions, targets=labels, group_name="classification", m_types=miss_type
+            )
+            metric_recorder.update_group_all(
+                predictions=rec_embd, targets=target_embd, group_name="reconstruction", m_types=miss_type
+            )
             self.train()
 
             if return_eval_data:
                 return {
                     "loss": total_loss.item(),
-                    **other_losses,
+                    "other_losses": other_losses,
                     "predictions": predictions,
                     "labels": labels,
                     "rec_embd": rec_embd,
                     "target_embd": target_embd,
-                    **metrics,
                 }
 
             return {
                 "loss": total_loss.item(),
-                **other_losses,
-                **metrics,
+                "losses": other_losses,
             }
 
     def incongruent_train_step(
         self,
-        batch: dict[torch.Tensor],
-        labels: torch.Tensor,
+        batch: dict[Tensor],
+        labels: Tensor,
         criterion: Module,
         optimizer: Optimizer,
         device: torch.device,
@@ -346,8 +452,8 @@ class CMAM(Module):
 
     def incongruent_evaluate(
         self,
-        batch: Dict[Modality, torch.Tensor],
-        labels: torch.Tensor,
+        batch: Dict[Modality, Tensor],
+        labels: Tensor,
         criterion: Module,
         device: torch.device,
         mm_model: MultimodalModelProtocol,
@@ -510,7 +616,7 @@ class DualCMAM(Module):
         self.decoders.to(device)
         return self
 
-    def forward(self, input_modality: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    def forward(self, input_modality: Tensor) -> tuple[Tensor, Tensor]:
         input_embd = self.input_encoder(input_modality)
         reconstructed_embd_one = self.decoders[0](input_embd)
         reconstructed_embd_two = self.decoders[1](input_embd)
@@ -519,8 +625,8 @@ class DualCMAM(Module):
 
     def train_step(
         self,
-        batch: Dict[Modality, torch.Tensor],
-        labels: torch.Tensor,
+        batch: Dict[Modality, Tensor],
+        labels: Tensor,
         cmam_criterion: CMAMLoss,
         optimizer: Optimizer,
         device: torch.device,

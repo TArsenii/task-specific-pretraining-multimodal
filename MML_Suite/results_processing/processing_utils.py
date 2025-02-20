@@ -1,5 +1,6 @@
 from collections.abc import Set
 import glob
+import json
 import os
 import re
 from collections import defaultdict
@@ -68,7 +69,7 @@ def extract_metric(s: str) -> str:
     return split[0]
 
 
-def load_test_metrics(fp: str | Path | PathLike) -> DataFrame:
+def load_test_metrics(fp: str | Path | PathLike, extract_key: Optional[str] = None) -> DataFrame:
     """
     Load test metrics from a JSON file into a DataFrame.
 
@@ -78,7 +79,27 @@ def load_test_metrics(fp: str | Path | PathLike) -> DataFrame:
     Returns:
         DataFrame containing test metrics
     """
-    metrics = pd.read_json(fp)
+
+    with open(fp, "r") as f:
+        metrics = json.load(f)
+
+    metrics = metrics[0] if isinstance(metrics, list) else metrics
+
+    if extract_key:
+        metrics = metrics[extract_key]
+
+    keys_to_remove = []
+
+    for metric in metrics:
+        if "ConfusionMatrix" in metric:
+            keys_to_remove.append(metric)
+
+    if len(keys_to_remove) > 0:
+        for i in range(0, len(keys_to_remove)):
+            del metrics[keys_to_remove[i]]
+
+    metrics = pd.DataFrame([metrics])
+
     if "index" in metrics.columns:
         metrics = metrics.drop(columns=["index"])
     if "split" in metrics.columns:
@@ -186,6 +207,7 @@ def load_all_test_metrics(
     round: Optional[int] = 6,
     format: Literal["standard", "grouped"] = "standard",
     baseline_modality: str = "ATV",
+    extract_key: Optional[str] = None,
     metrics_to_test: Dict[str, float] = {
         "Has0_Accuracy": 0.5,
         "Has0_F1": 0.5,
@@ -209,23 +231,33 @@ def load_all_test_metrics(
     Returns:
         Either a single DataFrame or tuple of DataFrames depending on format
     """
-    dfs = [load_test_metrics(fp / test_metrics_name) for fp in files]
+    dfs = [load_test_metrics(fp / test_metrics_name, extract_key=extract_key) for fp in files]
+    print(f"Loaded {len(dfs)} files.")
+
     df = pd.concat(dfs, ignore_index=True)
+    if "ConfusionMatrix" in df.columns:
+        df = df.drop(columns=["ConfusionMatrix"])
+        print("Dropped ConfusionMatrix columns.")
 
     if drop_loss:
         df = df.drop(columns=["loss"])
+        print("Dropped loss columns.")
+
+    return df
 
     df = df.T
+    print(df.shape)
 
     modalities_series = df.index.map(extract_modality_availability)
     metrics_series = df.index.map(extract_metric)
-
     if remove_prefix:
         metrics_series = metrics_series.str.replace(remove_prefix, "")
 
     df.index = pd.MultiIndex.from_tuples(
         list(zip(metrics_series, modalities_series)), names=["Metric", "Modalities Available"]
     )
+
+    return df
 
     stats_results = calculate_stats(df)
 

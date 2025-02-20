@@ -19,19 +19,19 @@ class GatedBiModalNetwork(Module):
         self,
         input_one_dim: int,
         input_two_dim: int,
-        output_one_size: int,
-        output_two_size: int,
+        output_one_dim: int,
+        output_two_dim: int,
         *,
         use_bias: bool = False,
     ):
         super().__init__()
 
         # Linear layers for each modality
-        self.fc_one = Linear(input_one_dim, output_one_size, bias=use_bias)
-        self.fc_two = Linear(input_two_dim, output_two_size, bias=use_bias)
+        self.fc_one = Linear(input_one_dim, output_one_dim, bias=use_bias)
+        self.fc_two = Linear(input_two_dim, output_two_dim, bias=use_bias)
 
         # Gate computation layer
-        self.hidden_sigmoid = Linear(output_one_size + output_two_size, 1, bias=use_bias)
+        self.hidden_sigmoid = Linear(output_one_dim + output_two_dim, 1, bias=use_bias)
 
         # Activations
         self.activation = Tanh()
@@ -56,6 +56,9 @@ class GatedBiModalNetwork(Module):
         combined_features = torch.cat([output_one, output_two], dim=1)
         gate = self.gate_activation(self.hidden_sigmoid(combined_features))
 
-        # Apply gating mechanism
-        gated_output = gate.unsqueeze(-1) * output_one + (1 - gate).unsqueeze(-1) * output_two
+        gated_output = gate.view(gate.size()[0], 1) * output_one + (1 - gate).view(gate.size()[0], 1) * output_two
         return gated_output
+
+        # # Apply gating mechanism
+        # gated_output = gate.unsqueeze(-1) * output_one + (1 - gate).unsqueeze(-1) * output_two
+        # return gated_output

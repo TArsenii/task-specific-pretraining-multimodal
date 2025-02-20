@@ -171,9 +171,9 @@ class UttFusionModel(Module, MultimodalMonitoringMixin, MultimodalModelProtocol)
             Dict[str, Any]: Training results including loss.
         """
         A, V, T, labels, _miss_type = (
-            batch[str(Modality.AUDIO)].to(device).float(),
-            batch[str(Modality.VIDEO)].to(device).float(),
-            batch[str(Modality.TEXT)].to(device).float(),
+            batch[Modality.AUDIO].to(device).float(),
+            batch[Modality.VIDEO].to(device).float(),
+            batch[Modality.TEXT].to(device).float(),
             batch["label"].to(device),
             batch["pattern_name"],
         )
@@ -182,7 +182,7 @@ class UttFusionModel(Module, MultimodalMonitoringMixin, MultimodalModelProtocol)
         logits = self.forward(A, V, T)
 
         optimizer.zero_grad()
-        loss = loss_functions(logits.squeeze(), labels.squeeze())
+        loss = loss_functions(logits.squeeze(), labels.squeeze())["total_loss"]
         loss.backward()
 
         if self.clip is not None:
@@ -192,7 +192,9 @@ class UttFusionModel(Module, MultimodalMonitoringMixin, MultimodalModelProtocol)
         predictions = safe_detach(F.softmax(logits, dim=-1).argmax(dim=-1).squeeze())
         labels = safe_detach(labels.squeeze())
 
-        metric_recorder.update_all(predictions=predictions, targets=labels, m_types=np.array(_miss_type))
+        metric_recorder.update_group_all(
+            "classification", predictions=predictions, targets=labels, m_types=np.array(_miss_type)
+        )
         return {"loss": loss.item()}
 
     def validation_step(
@@ -223,9 +225,9 @@ class UttFusionModel(Module, MultimodalMonitoringMixin, MultimodalModelProtocol)
 
         with torch.no_grad():
             A, V, T, labels, miss_type = (
-                batch[str(Modality.AUDIO)].to(device).float(),
-                batch[str(Modality.VIDEO)].to(device).float(),
-                batch[str(Modality.TEXT)].to(device).float(),
+                batch[Modality.AUDIO].to(device).float(),
+                batch[Modality.VIDEO].to(device).float(),
+                batch[Modality.TEXT].to(device).float(),
                 batch["label"].to(device),
                 batch["pattern_name"],
             )
@@ -234,11 +236,13 @@ class UttFusionModel(Module, MultimodalMonitoringMixin, MultimodalModelProtocol)
 
             miss_types = np.array(miss_type)
 
-            loss = loss_functions(logits.squeeze(), labels)
+            loss = loss_functions(logits.squeeze(), labels)["total_loss"]
             predictions = safe_detach(F.softmax(logits, dim=-1).argmax(dim=-1).squeeze())
             labels = safe_detach(labels.squeeze())
 
-            metric_recorder.update_all(predictions=predictions, targets=labels, m_types=miss_types)
+            metric_recorder.update_group_all(
+                "classification", predictions=predictions, targets=labels, m_types=miss_types
+            )
 
             if return_test_info:
                 all_predictions.append(predictions.cpu().numpy())
@@ -283,7 +287,8 @@ class UttFusionModel(Module, MultimodalMonitoringMixin, MultimodalModelProtocol)
                 for mod, embd in zip([Modality.AUDIO, Modality.VIDEO, Modality.TEXT], [a_embd, v_embd, t_embd]):
                     if embd is not None:
                         embeddings[mod].append(safe_detach(embd))
+                embeddings["label"] += batch["label"]
 
-        embeddings: Dict[Modality, np.ndarray] = {mod: np.concatenate(embds) for mod, embds in embeddings.items()}
+        # embeddings: Dict[Modality, np.ndarray] = {mod: np.concatenate(embds) for mod, embds in embeddings.items()}
 
         return embeddings

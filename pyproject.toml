@@ -39,6 +39,9 @@ mypy = "^1.13.0"
 umap = "^0.1.1"
 pytorch-warmup = "^0.2.0"
 torch-geometric = "^2.6.1"
+pot = "^0.9.5"
+ipympl = "^0.9.6"
+pyqt6 = "^6.8.1"
 
 
 

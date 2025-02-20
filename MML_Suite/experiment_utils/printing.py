@@ -228,11 +228,21 @@ class EnhancedConsole:
         if confusion_table:
             self.console.print(confusion_table)
 
-    def display_validation_metrics(self, metrics: Dict[str, Any]):
+    def display_validation_metrics(self, metrics: Dict[str, Dict[str, Any]]):
         """Display validation metrics grouped by condition"""
+
+        # for group, group_data in metrics.items():
         grouped_metrics = defaultdict(dict)
+
         loss_metrics = {}
-        confusion_table = None
+        #     confusion_table = None
+
+        #     self.console.print(
+        #         f"Metrics for group: {group.title()}",
+        #     )
+
+        #     if not isinstance(group_data, dict):
+        #         continue
 
         for key, value in metrics.items():
             if key == "loss":

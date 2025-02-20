@@ -4,6 +4,9 @@
 # DATA
 **/DATA
 
+# Notebooks
+**/notebooks
+
 # Experiment Outputs
 **experiments_output/
 *.ipynb

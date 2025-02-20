@@ -1,6 +1,7 @@
 from __future__ import annotations
+from collections import defaultdict
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Set
 
 from torch import Tensor, Type
 from torch.nn import (
@@ -94,6 +95,23 @@ class WeightedLossTerm:
 
         return cls(loss_fn=loss_fn_type(**loss_kwargs), weight=weight)
 
+    def __call__(self, inputs, targets, override_weight_with: Optional[float] = None, *args, **kwargs) -> Tensor:
+        loss_value = self.loss_fn(inputs, targets, *args, **kwargs)
+        if isinstance(loss_value, dict):
+            loss_value = {
+                k: v * self.weight if override_weight_with is None else v * override_weight_with
+                for k, v in loss_value.items()
+            }
+
+        else:
+            loss_value = {
+                "total_loss": (
+                    loss_value * self.weight if override_weight_with is None else loss_value * override_weight_with
+                )
+            }
+
+        return loss_value
+
 
 class LossFunctionGroup(Dict[str, WeightedLossTerm]):
     @classmethod
@@ -103,12 +121,31 @@ class LossFunctionGroup(Dict[str, WeightedLossTerm]):
         return l_group
 
     def __call__(
-        self, *args, key: Optional[str] = None, override_weight_with: Optional[float] = None, **kwargs
+        self,
+        inputs,
+        targets,
+        key: Optional[str | Set[str]] = None,
+        override_weight_with: Optional[float] = None,
+        **kwargs,
     ) -> Tensor:
-        if not key:
-            ## assume a single loss function
-            key = list(self.keys())[0]
+        losses = defaultdict(float)
 
-        return self[key].loss_fn(*args, **kwargs) * (
-            self[key].weight if override_weight_with is None else override_weight_with
-        )
+        if key is not None:
+            if isinstance(key, str):
+                key = {key}
+
+            for loss_term, weighted_loss_term in self.items():
+                if loss_term in key:
+                    loss_value = weighted_loss_term(inputs, targets, override_weight_with, **kwargs)
+                    for k, v in loss_value.items():
+                        losses[k] += v
+        else:
+            for loss_term, weighted_loss_term in self.items():
+                loss_value = weighted_loss_term(inputs, targets, override_weight_with, **kwargs)
+                for k, v in loss_value.items():
+                    losses[k] += v
+
+        return losses
+
+    def __str__(self) -> str:
+        return f"LossFunctionGroup({list(self.keys())})"

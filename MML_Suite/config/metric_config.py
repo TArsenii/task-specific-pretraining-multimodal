@@ -1,3 +1,4 @@
+from __future__ import annotations
 import importlib
 import inspect
 from collections import defaultdict
@@ -41,7 +42,7 @@ class MetricConfig(BaseConfig):
         return f"MetricConfig(metrics={self.metrics}, groups={self.groups})"
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "MetricConfig":
+    def from_dict(cls, data: Dict[str, Any]) -> MetricConfig:
         """Create MetricConfig from a dictionary."""
 
         return cls(metrics=data.get("metrics", {}), groups=data.get("groups", {}))
@@ -118,7 +119,7 @@ class MetricConfig(BaseConfig):
             for group_name, metrics in self.groups.items():
                 groups_table.add_row(group_name, ", ".join(metrics))
 
-            console.print("\n", groups_table)
+            console.print(groups_table)
 
     def _validate_groups(self) -> None:
         """Validate metric groups configuration."""

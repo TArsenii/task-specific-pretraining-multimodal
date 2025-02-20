@@ -11,25 +11,32 @@ model: !ModelConfig
   name: "AVMNIST"
   model_type: "AVMNIST"
   audio_encoder: !MNISTAudio
-    conv_block_one_args: !ConvBlock
+    conv_block_one_one_args: !ConvBlockArgs
       conv_one_in: 1
       conv_one_out: 32
-    conv_block_two_args: !ConvBlock
+    conv_block_one_two_args: !ConvBlockArgs
       conv_one_in: 32
       conv_one_out: 32
     conv_batch_norm: True
-    hidden_dim: 64
-  image_encoder: !MNISTImage
-    conv_block_one_one_args: !ConvBlock
-      conv_one_in: 1
-      conv_one_out: 32
-    conv_block_one_two_args: !ConvBlock
+    conv_block_two_one_args: !ConvBlockArgs
       conv_one_in: 32
       conv_one_out: 64
-    conv_block_two_one_args: !ConvBlock
+    conv_block_two_two_args: !ConvBlockArgs
       conv_one_in: 64
       conv_one_out: 64
-    conv_block_two_two_args: !ConvBlock
+    conv_batch_norm: True
+    hidden_dim: 64
+  image_encoder: !MNISTImage
+    conv_block_one_one_args: !ConvBlockArgs
+      conv_one_in: 1
+      conv_one_out: 32
+    conv_block_one_two_args: !ConvBlockArgs
+      conv_one_in: 32
+      conv_one_out: 64
+    conv_block_two_one_args: !ConvBlockArgs
+      conv_one_in: 64
+      conv_one_out: 64
+    conv_block_two_two_args: !ConvBlockArgs
       conv_one_in: 64
       conv_one_out: 64
     hidden_dim: 128
@@ -70,7 +77,6 @@ data: !DataConfig
       split: "train"
       target_modality: !Modality "MULTIMODAL"
       batch_size: 128
-
       shuffle: true
       missing_patterns: !MissingPatternConfig
         modalities:
@@ -107,6 +113,21 @@ data: !DataConfig
           !Modality image: !ModalityConfig
             missing_rate: 0.0
         selected_patterns: ["ai", "a", "i"]
+    embeddings: !DatasetConfig
+      dataset: "AVMNIST"
+      data_fp: "$EXP_PATH/DATA/avmnist/test_subset.csv"
+      split: "test"
+      target_modality: !Modality "MULTIMODAL"
+      shuffle: true
+      batch_size: 128
+      missing_patterns: !MissingPatternConfig
+        modalities:
+          !Modality audio: !ModalityConfig
+            missing_rate: 0.0
+          !Modality image: !ModalityConfig
+            missing_rate: 0.0
+        selected_patterns: ["ai"]
+
 metrics:
   metrics:
     accuracy:
@@ -164,7 +185,8 @@ metrics:
       function: "sklearn.metrics.confusion_matrix"
       kwargs:
         labels: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
-        
+  groups:
+    classification: ["accuracy", "balanced_accuracy", "f1_macro", "f1_micro", "f1_weighted", "precision_macro", "precision_micro", "precision_weighted", "recall_macro", "recall_micro", "recall_weighted", "ConfusionMatrix"]
 
 logging:
   log_path: "$EXP_PATH/experiments_output/{experiment_name}/logs/{run_id}"

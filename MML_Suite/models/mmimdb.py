@@ -122,6 +122,21 @@ class GMUModel(Module):
         self.mm_mlp = classifier
         self.binary_threshold = binary_threshold
 
+    def logits_transform(self, logits: Tensor) -> Tensor:
+        predictions = torch.nn.functional.sigmoid(logits).detach().cpu().numpy()
+        predictions = (predictions > 0.5).astype(int)
+
+        return predictions
+
+    def get_encoder(self, modality: Modality) -> MMIMDbModalityEncoder:
+        match modality:
+            case Modality.IMAGE:
+                return self.image_model
+            case Modality.TEXT:
+                return self.text_model
+            case _:
+                raise ValueError(f"Invalid modality: {modality}. Must be one of {[Modality.IMAGE, Modality.TEXT]}")
+
     def forward(
         self,
         I: Tensor,
@@ -157,9 +172,10 @@ class GMUModel(Module):
         self,
         batch: Dict[str, Any],
         optimizer: Optimizer,
-        criterion: LossFunctionGroup,
+        loss_functions: LossFunctionGroup,
         device: torch.device,
         metric_recorder: MetricRecorder,
+        epoch: int,
     ) -> Dict[str, Any]:
         """
         Perform a single training step.
@@ -185,7 +201,7 @@ class GMUModel(Module):
         optimizer.zero_grad()
 
         logits = self.forward(I=I, T=T)
-        loss = criterion(logits, labels)
+        loss = loss_functions(inputs=logits, targets=labels)["total_loss"]
         loss.backward()
         optimizer.step()
 
@@ -194,16 +210,17 @@ class GMUModel(Module):
         labels = safe_detach(labels)
         miss_type = np.array(miss_type)
 
-        metric_recorder.update_all(predictions=predictions, targets=labels, m_types=miss_type)
+        metric_recorder.update_group_all("classification", predictions=predictions, targets=labels, m_types=miss_type)
         return {"loss": loss.item()}
 
     def validation_step(
         self,
         batch: Dict[str, Any],
-        criterion: LossFunctionGroup,
+        loss_functions: LossFunctionGroup,
         device: torch.device,
         metric_recorder: MetricRecorder,
         return_test_info: bool = False,
+        epoch: int = None,
     ) -> Dict[str, Any]:
         """
         Perform a single validation step.
@@ -228,14 +245,14 @@ class GMUModel(Module):
             )
 
             logits = self.forward(I=I, T=T)
-            loss = criterion(logits, labels)
+            loss = loss_functions(inputs=logits, targets=labels)["total_loss"]
             predictions = safe_detach(torch.sigmoid(logits))
             predictions = (predictions > self.binary_threshold).astype(int)
 
             labels = safe_detach(labels)
             miss_type = np.array(miss_type)
 
-            metric_recorder.update_all(predictions=predictions, targets=labels, m_types=miss_type)
+        metric_recorder.update_group_all("classification", predictions=predictions, targets=labels, m_types=miss_type)
 
         return {"loss": loss.item()}
 
@@ -285,5 +302,6 @@ class GMUModel(Module):
 
                 embeddings[Modality.IMAGE].append(safe_detach(image_embedding))
                 embeddings[Modality.TEXT].append(safe_detach(text_embedding))
+                embeddings["label"] += batch["label"]
 
         return embeddings

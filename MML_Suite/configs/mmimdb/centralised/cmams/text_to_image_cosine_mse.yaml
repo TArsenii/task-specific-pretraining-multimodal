@@ -1,6 +1,6 @@
-!StandardConfig
+!CMAMConfig
 experiment: !ExperimentConfig
-  name: "MMIMDb Baseline Multimodal Training"
+  name: "MM_IMDb C-MAM Text to Image Cosine + MSE"
   device: "cuda"
   train_print_interval_epochs: 1
   validation_print_interval_epochs: 1
@@ -10,7 +10,7 @@ experiment: !ExperimentConfig
 model: !ModelConfig
   name: "MMIMDb"
   model_type: "MMIMDb"
-
+  pretrained_path: "experiments_output/mm_imdb_Baseline_Multimodal_Training/models/{run_id}/best.pth"
   image_encoder: !MMIMDbModalityEncoder
     input_dim: 4096
     output_dim: 512
@@ -26,26 +26,52 @@ model: !ModelConfig
     output_two_dim: 512
 
   classifier: !MLPGenreClassifier
-    input_dim: 512
-    hidden_dim: 512
-    output_dim: 23
+    input_size: 512
+    hidden_size: 512
+    output_size: 23
+
+cmam: !ModelConfig
+  name: "CMAM"
+  model_type: "CMAM"
+  target_modality: !Modality Image
+  load_pretrained_encoder_state_for: []
+  labels_key: "label"
+  input_encoders: !InputEncoders
+    !Modality Text: !MMIMDbModalityEncoder
+      input_dim: 300
+      output_dim: 512
+  association_network: !AssociationNetwork
+    input_size: 512
+    hidden_size: 256
+    output_size: 512
+    dropout: 0.4
+    batch_norm: True
 
 training:
   epochs: 50
   early_stopping: true
-  early_stopping_patience: 15
+  early_stopping_patience: 10
   num_modalities: 2
   optimizer: !Optimizer
     name: "Adam"
     default_kwargs:
       lr: 0.00001
       weight_decay: 0.001
-  criterion: "bce_with_logits"
+  loss_functions: !LossFunctionGroup
+    cmam: 
+      loss_name: "cmam"
+      loss_kwargs: {
+        cosine_weight: 1.0,
+        mse_weight: 1.0,
+        mae_weight: 0.0,
+        cls_weight: 0.00
+      }
+      weight: 1.0  
 
 data: !DataConfig
   datasets:
     train: !DatasetConfig
-      dataset: "MMIMDb"
+      dataset: "mm_imdb"
       data_fp: "$EXP_PATH/DATA/mmimdb/train.hdf5"
       split: "train"
       target_modality: !Modality "MULTIMODAL"
@@ -53,27 +79,27 @@ data: !DataConfig
       shuffle: true
       missing_patterns: !MissingPatternConfig
         modalities:
-          text: !ModalityConfig
+          !Modality text: !ModalityConfig
             missing_rate: 0.0
-          image: !ModalityConfig
+          !Modality image: !ModalityConfig
             missing_rate: 0.0
         selected_patterns: ["it"]
     validation: !DatasetConfig
-      dataset: "AVMNIST"
+      dataset: "mm_imdb"
       data_fp: "$EXP_PATH/DATA/mmimdb/validation.hdf5"
-      split: "valid"
+      split: "val"
       target_modality: !Modality "MULTIMODAL"
       shuffle: true
       batch_size: 128
       missing_patterns: !MissingPatternConfig
         modalities:
-          text: !ModalityConfig
+          !Modality text: !ModalityConfig
             missing_rate: 0.0
-          image: !ModalityConfig
+          !Modality image: !ModalityConfig
             missing_rate: 0.0
-        selected_patterns: ["it", "i", "t"]
+        selected_patterns: ["it"]
     test: !DatasetConfig
-      dataset: "AVMNIST"
+      dataset: "mm_imdb"
       data_fp: "$EXP_PATH/DATA/mmimdb/test.hdf5"
       split: "test"
       target_modality: !Modality "MULTIMODAL"
@@ -81,11 +107,25 @@ data: !DataConfig
       batch_size: 128
       missing_patterns: !MissingPatternConfig
         modalities:
-          text: !ModalityConfig
+          !Modality text: !ModalityConfig
             missing_rate: 0.0
-          image: !ModalityConfig
+          !Modality image: !ModalityConfig
             missing_rate: 0.0
-        selected_patterns: ["it", "i", "t"]
+        selected_patterns: ["it"]
+    embeddings: !DatasetConfig
+      dataset: "mm_imdb"
+      data_fp: "$EXP_PATH/DATA/mmimdb/test.hdf5"
+      split: "test"
+      target_modality: !Modality "MULTIMODAL"
+      shuffle: true
+      batch_size: 128
+      missing_patterns: !MissingPatternConfig
+        modalities:
+          !Modality text: !ModalityConfig
+            missing_rate: 0.0
+          !Modality image: !ModalityConfig
+            missing_rate: 0.0
+        selected_patterns: ["it"]
 
 metrics:
   metrics:
@@ -108,7 +148,20 @@ metrics:
       function: "sklearn.metrics.f1_score"
       kwargs:
         average: "micro"
-        zero_division: 0      
+        zero_division: 0
+    mae:
+      function: "sklearn.metrics.mean_absolute_error"
+      kwargs: {}
+    mse:
+      function: "sklearn.metrics.mean_squared_error"
+      kwargs: {}
+    cosine:
+      function: "metrics.cosine_similarity"
+      kwargs: {}
+  groups:
+    classification: ["f1_samples", "f1_macro", "f1_weighted", "f1_micro"]
+    reconstruction: ["mae", "mse", "cosine"]
+
 
 logging:
   log_path: "$EXP_PATH/experiments_output/{experiment_name}/logs/{run_id}"
@@ -117,8 +170,7 @@ logging:
   save_metric: "loss"
   monitor_path: "$EXP_PATH/experiments_output/{experiment_name}/monitoring/{run_id}"
   tensorboard_path: "$EXP_PATH/experiments_output/{experiment_name}/tensorboard/{run_id}"
-  tb_only_record:
-    - "loss"
+
 
 monitoring:
   enabled: false

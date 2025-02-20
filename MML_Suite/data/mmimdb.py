@@ -1,11 +1,14 @@
 from os import PathLike
 from pathlib import Path
-from typing import Any, Dict, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 import h5py as h5
 import torch
 from data.base_dataset import MultimodalBaseDataset
 from modalities import Modality
+from experiment_utils.logging import get_logger
+
+logger = get_logger()
 
 
 class MMIMDb(MultimodalBaseDataset):
@@ -40,9 +43,9 @@ class MMIMDb(MultimodalBaseDataset):
 
     def __init__(
         self,
-        data_fp: Path | PathLike,
-        split: str,
-        target_modality: Modality | str = Modality.MULTIMODAL,
+        data_fp: str | Path | PathLike,
+        split: Literal["train", "val", "test"],
+        target_modality: Modality = Modality.MULTIMODAL,
         *,
         missing_patterns: Optional[Dict[str, Dict[str, float]]] = None,
         selected_patterns: Optional[list[str]] = None,
@@ -50,6 +53,8 @@ class MMIMDb(MultimodalBaseDataset):
         text_key: str = "features",
         labels_key: str = "genres",
         imdb_ids_key: str = "imdb_ids",
+        split_indices: Optional[List[int]] = None,
+        _id: int = 1,
     ):
         """
         Initialize the MMIMDb dataset.
@@ -66,15 +71,20 @@ class MMIMDb(MultimodalBaseDataset):
             imdb_ids_key (str): Key for IMDb IDs in the HDF5 file.
         """
         m_patterns = missing_patterns or {
-            "it": {"image": 1.0, "text": 1.0},  # Both modalities present
-            "i": {"image": 1.0, "text": 0.0},  # Image only
-            "t": {"image": 0.0, "text": 1.0},  # Text only
+            "it": {Modality.IMAGE: 1.0, Modality.TEXT: 1.0},  # Both modalities present
+            "i": {Modality.IMAGE: 1.0, Modality.TEXT: 0.0},  # Image only
+            "t": {Modality.IMAGE: 0.0, Modality.TEXT: 1.0},  # Text only
         }
-        super().__init__(split=split, selected_patterns=selected_patterns, missing_patterns=m_patterns)
-        self.data = h5.File(Path(data_fp), "r")
+        super().__init__(split=split, selected_patterns=selected_patterns, missing_patterns=m_patterns, _id=_id)
 
-        if isinstance(target_modality, str):
-            target_modality = Modality.from_str(target_modality)
+        assert split in self.VALID_SPLITS, f"Invalid split provided, must be one of {self.VALID_SPLITS}"
+
+        self.split = split
+
+        data_fp = Path(data_fp)
+        if not data_fp.exists():
+            raise FileNotFoundError(f"Dataset file not found: {data_fp}")
+        self.data = h5.File(Path(data_fp), "r")
 
         assert isinstance(target_modality, Modality), "Invalid modality provided, must be a Modality or string"
         assert target_modality in [
@@ -82,9 +92,7 @@ class MMIMDb(MultimodalBaseDataset):
             Modality.IMAGE,
             Modality.MULTIMODAL,
         ], "Invalid modality provided, must be one of [text, image, multimodal]"
-
-        self.modality = target_modality
-        self.split = split
+        self.target_modality = target_modality
 
         # Ensure required keys exist in the dataset
         assert imdb_ids_key in self.data.keys(), f"IMDb IDs key {imdb_ids_key} not found in the dataset"
@@ -96,6 +104,20 @@ class MMIMDb(MultimodalBaseDataset):
         self.text_features = text_key
         self.image_features = image_key
         self.labels = labels_key
+
+        self.num_samples = len(self.data[self.imdb_ids])
+        # Set up pattern-specific indices for validation/test
+        if split != "train":
+            self.pattern_indices = {pattern: list(range(self.num_samples)) for pattern in self.selected_patterns}
+        self.masks = self._initialise_missing_masks(self.missing_patterns, len(self))
+
+        logger.info(
+            f"Initialized MM-IMDb dataset:"
+            f"\n  Split: {split}"
+            f"\n  Target Modality: {target_modality}"
+            f"\n  Samples: {self.num_samples}"
+            f"\n  Patterns: {', '.join(self.selected_patterns)}"
+        )
 
     def _load_image(self, idx: int) -> torch.Tensor:
         """
@@ -155,21 +177,24 @@ class MMIMDb(MultimodalBaseDataset):
         Returns:
             Dict[str, Any]: A dictionary containing sample data and metadata.
         """
-        pattern, idx = self._get_pattern_and_sample_idx(idx)
-        pattern = self.missing_patterns[pattern]
+        _data = super().__getitem__(idx=idx)
+        pattern_name, idx = _data.pop("pattern"), _data.pop("sample_idx")
+
+        self.current_pattern = pattern_name
         label = self._load_label(idx)
         sample = {
             "label": label,
-            "pattern_name": pattern,
+            "pattern_name": pattern_name,
             "missing_mask": {},
             "sample_idx": idx,
+            **_data,
+        }
+        modality_loaders = {
+            "image": (lambda: self._load_image(idx), Modality.IMAGE),
+            "text": (lambda: self._load_text(idx), Modality.TEXT),
         }
 
-        modality_loaders = {
-            "image": (lambda idx: self._load_image(idx), Modality.IMAGE),
-            "text": (lambda idx: self._load_text(idx), Modality.TEXT),
-        }
-        sample = self.get_samples(pattern, sample, modality_loaders, idx=idx)
+        sample = self.get_samples(sample, modality_loaders)
         return sample
 
     def __len__(self) -> int:

@@ -38,12 +38,15 @@ class MNISTAudio(Module):
 
     def __init__(
         self,
-        conv_block_one_args: ConvBlockArgs,
-        conv_block_two_args: ConvBlockArgs,
+        conv_block_one_one_args: ConvBlockArgs,
+        conv_block_one_two_args: ConvBlockArgs,
+        conv_block_two_one_args: ConvBlockArgs,
+        conv_block_two_two_args: ConvBlockArgs,
         hidden_dim: int,
         *,
         conv_batch_norm: bool = True,
-        max_pool_kernel_size: Union[int, Tuple[int, int]] = (2, 2),
+        max_pool_one_kernel_size: Union[int, Tuple[int, int]] = (2, 2),
+        max_pool_two_kernel_size: Union[int, Tuple[int, int]] = (3, 3),
     ) -> None:
         """
         Initialize the audio encoder.
@@ -56,17 +59,26 @@ class MNISTAudio(Module):
             max_pool_kernel_size (Union[int, Tuple[int, int]]): Kernel size for max pooling.
         """
         super().__init__()
-        conv_block = ConvBlock(
-            conv_block_one_args=conv_block_one_args,
-            conv_block_two_args=conv_block_two_args,
+        conv_block_one = ConvBlock(
+            conv_block_one_args=conv_block_one_one_args,
+            conv_block_two_args=conv_block_one_two_args,
             batch_norm=conv_batch_norm,
         )
-        conv_block_out_dim = 24064  # Precomputed based on architecture
+
+        conv_block_two = ConvBlock(
+            conv_block_one_args=conv_block_two_one_args,
+            conv_block_two_args=conv_block_two_two_args,
+            batch_norm=conv_batch_norm,
+        )
+
+        conv_block_out_dim = 4800  # Precomputed based on architecture
 
         self.hidden_dim = hidden_dim
         self.net = Sequential(
-            conv_block,
-            MaxPool2d(kernel_size=max_pool_kernel_size),
+            conv_block_one,
+            MaxPool2d(kernel_size=max_pool_one_kernel_size),
+            conv_block_two,
+            MaxPool2d(kernel_size=max_pool_two_kernel_size),
             Flatten(),
             Linear(conv_block_out_dim, hidden_dim),
         )
@@ -125,7 +137,7 @@ class MNISTImage(Module):
             conv_batch_norm (bool): Whether to use batch normalization.
             max_pool_kernel_size (Union[int, Tuple[int, int]]): Kernel size for max pooling.
         """
-        super().__init__()
+        super(MNISTImage, self).__init__()
         conv_block_one = ConvBlock(
             conv_block_one_args=conv_block_one_one_args,
             conv_block_two_args=conv_block_one_two_args,
@@ -279,14 +291,14 @@ class AVMNIST(Module, MultimodalMonitoringMixin):
         A, I, labels, miss_type = (
             batch[Modality.AUDIO].to(device).float(),
             batch[Modality.IMAGE].to(device).float(),
-            batch["label"].to(device),
+            batch["labels"].to(device),
             batch["pattern_name"],
         )
 
         self.train()
         optimizer.zero_grad()
         logits = self.forward(A=A, I=I)
-        loss = loss_functions(logits, labels)
+        loss = loss_functions(logits, labels)["total_loss"]
         loss.backward()
         optimizer.step()
 
@@ -294,7 +306,7 @@ class AVMNIST(Module, MultimodalMonitoringMixin):
         labels = labels.detach().cpu().numpy()
         miss_type = np.array(miss_type)
 
-        metric_recorder.update_all(predictions=predictions, targets=labels, m_types=miss_type)
+        metric_recorder.update_group_all("classification", predictions=predictions, targets=labels, m_types=miss_type)
         return {"loss": loss.item()}
 
     def validation_step(
@@ -323,17 +335,19 @@ class AVMNIST(Module, MultimodalMonitoringMixin):
             A, I, labels, miss_type = (
                 batch[Modality.AUDIO].to(device).float(),
                 batch[Modality.IMAGE].to(device).float(),
-                batch["label"].to(device),
+                batch["labels"].to(device),
                 batch["pattern_name"],
             )
 
             logits = self.forward(A=A, I=I)
-            loss = loss_functions(logits, labels)
+            loss = loss_functions(logits, labels)["total_loss"]
             predictions = softmax(logits, dim=1).argmax(dim=1).detach().cpu().numpy()
             labels = labels.detach().cpu().numpy()
             miss_type = np.array(miss_type)
 
-            metric_recorder.update_all(predictions=predictions, targets=labels, m_types=miss_type)
+            metric_recorder.update_group_all(
+                group_name="classification", predictions=predictions, targets=labels, m_types=miss_type
+            )
 
             if return_test_info:
                 return {
@@ -382,5 +396,15 @@ class AVMNIST(Module, MultimodalMonitoringMixin):
 
                 embeddings[Modality.AUDIO].append(safe_detach(audio_embedding, to_np=True))
                 embeddings[Modality.IMAGE].append(safe_detach(image_embedding, to_np=True))
+                embeddings["label"] += batch["labels"]
 
         return embeddings
+
+    def get_encoder(self, modality: Modality) -> Module:
+        match modality:
+            case Modality.AUDIO:
+                return self.audio_encoder
+            case Modality.IMAGE:
+                return self.image_encoder
+            case _:
+                raise ValueError(f"Unknown modality: {modality}")

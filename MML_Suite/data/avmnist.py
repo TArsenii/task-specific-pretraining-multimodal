@@ -123,7 +123,6 @@ class AVMNIST(MultimodalBaseDataset):
             Modality.MULTIMODAL,
         ], "Invalid modality provided, must be one of [audio, image, multimodal]"
         self.target_modality = target_modality
-        self.masks = self._initialise_missing_masks(self.missing_patterns, len(self))
 
         logger.info(
             f"Initialized AVMNIST dataset:"
@@ -209,7 +208,7 @@ class AVMNIST(MultimodalBaseDataset):
         label = self.data[self.labels_column].iloc[idx]
         label = torch.tensor(label, dtype=torch.long)
         sample = {
-            "label": label,
+            "labels": label,
             "pattern_name": pattern_name,
             "missing_mask": {},
             "sample_idx": idx,
@@ -256,10 +255,10 @@ class AVMNIST(MultimodalBaseDataset):
         Returns:
             Dict[str, Any]: Collated batch of samples.
         """
-        device = batch[0]["label"].device
+        device = batch[0]["labels"].device
 
         collated = {
-            "label": torch.stack([b["label"] for b in batch]),
+            "labels": torch.stack([b["labels"] for b in batch]),
             "pattern_name": [b["pattern_name"] for b in batch],
             "missing_masks": {
                 mod: torch.tensor([b["missing_mask"][mod] for b in batch], device=device)

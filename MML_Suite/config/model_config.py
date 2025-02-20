@@ -1,8 +1,11 @@
+from __future__ import annotations
+from datetime import datetime
 import importlib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Literal, Optional
 
+from experiment_utils.utils import SafeDict
 from experiment_utils.printing import get_console
 from experiment_utils.logging import get_logger
 from rich.table import Table
@@ -33,16 +36,33 @@ class ModelConfig(BaseConfig):
 
         self._display_config()
 
-    def validate_config(self) -> None:
+    def format_path(self, path: str, run_id: int) -> Path:
+        """Format a path string with config values and return a Path object."""
+        if not path:
+            return None
+
+        format_vars = SafeDict(
+            {
+                "run_id": run_id,
+            }
+        )
+        formatted_path = path.format_map(format_vars)
+        # formatted_path = self._sanitize_string()
+        console.print(f"[bold]Formatted Path:[/] {formatted_path}")
+        return Path(formatted_path)
+
+    def validate_config(self, run_id: int) -> None:
         """Validate the model configuration."""
         # Validate pretrained path
         if self.pretrained_path is not None:
             try:
-                path = Path(self.pretrained_path)
+                path = self.format_path(str(self.pretrained_path), run_id)
+                path = Path(path)
                 if not path.exists():
-                    raise FileNotFoundError(f"Pretrained path not found: {self.pretrained_path}")
+                    raise FileNotFoundError(f"Pretrained path not found: {path}")
+                console.print(f"[bold green]✓[/] Pretrained path verified: {path}")
                 self.pretrained_path = str(path.resolve())
-                logger.info(f"Validated pretrained path: {self.pretrained_path}")
+                logger.info(f"Validated pretrained path: {path}")
                 console.print(f"[bold green]✓[/] Pretrained path verified: {self.pretrained_path}")
             except Exception as e:
                 error_msg = f"Error validating pretrained path: {str(e)}"
@@ -94,7 +114,7 @@ class ModelConfig(BaseConfig):
             console.print(kwargs_table)
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "ModelConfig":
+    def from_dict(cls, data: Dict[str, Any]) -> ModelConfig:
         """Create a ModelConfig instance from a dictionary."""
         try:
             # Extract base fields

@@ -4,14 +4,19 @@ from typing import Any, Callable, Dict, List, Literal, Optional, Tuple
 
 import torch
 from experiment_utils.printing import get_console
+from experiment_utils.logging import get_logger
+from experiment_utils.utils import AccessError, NestedDictAccess
 from modalities import Modality, create_missing_mask
 from torch.utils.data import Dataset
 
 console = get_console()
+logger = get_logger()
 
 
 class MultimodalBaseDataset(Dataset):
     """Base class for multimodal datasets with mi ssing modality support."""
+
+    _ndict_accessor = NestedDictAccess(max_depth=5, logger=logger)
 
     def __init__(
         self,
@@ -138,7 +143,12 @@ class MultimodalBaseDataset(Dataset):
         }
 
         for modality in self.AVAILABLE_MODALITIES.values():
-            mask = self.masks[pattern][modality][sample_idx]
+            try:
+                mask = MultimodalBaseDataset._ndict_accessor.get(self.masks, [pattern, modality, sample_idx])
+            except Exception as e:
+                console.error(f"Error accessing missing mask: {e}")
+                exit(1)
+
             data[f"{str(modality)}_missing_index"] = mask
 
         return data

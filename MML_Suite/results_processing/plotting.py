@@ -635,6 +635,8 @@ def plot_embeddings(
     marker_scale: int = 50,
     title_mapping_fn: Optional[Callable[[str], str]] = None,
     title: Optional[str] = None,
+    context: str = "paper",
+    style: str = "whitegrid",
 ) -> None:
     match method:
         case "PCA":
@@ -651,6 +653,8 @@ def plot_embeddings(
                 marker_scale=marker_scale,
                 title_mapping_fn=title_mapping_fn,
                 title=title,
+                context=context,
+                style=style,
             )
         case "UMAP":
             _compute_umap(embedding_data, output_root, labels_data, seed, figsize, font_sizes, show)
@@ -786,6 +790,8 @@ def _compute_tsne(
     marker_scale: int = 50,
     title: str = "T-SNE Embeddings by Modality",
     title_mapping_fn: Optional[Callable[[str], str]] = None,
+    context: str = "paper",
+    style: str = "darkgrid",
 ) -> None:
     """
     Compute and plot T-SNE embeddings for each modality's ground truth and (optionally) reconstructed embeddings.
@@ -802,6 +808,12 @@ def _compute_tsne(
         font_sizes (Optional[Dict[str, int]]): Font sizes for various plot elements. Defaults to None.
         show (bool): Whether to display the plot. Defaults to True.
     """
+
+    sns.set_style(style)
+    print("Setting style to", style)
+    plt.rcParams["text.usetex"] = True
+    plt.rcParams["font.family"] = "serif"
+
     try:
         # Initialize font sizes
         global F_SIZES
@@ -826,8 +838,8 @@ def _compute_tsne(
             elif data.ndim == 3 and data.shape[2] == 2:  # Ground truth and reconstructions
                 tsne_input.append(data[:, :, 0])  # Ground truth
                 tsne_input.append(data[:, :, 1])  # Reconstructed
-                plot_labels.extend([f"{modality} (Ground Truth)"] * data.shape[0])
-                plot_labels.extend([f"{modality} (Reconstructed)"] * data.shape[0])
+                plot_labels.extend([rf"\textbf{{{modality}}} \textbf{{(Ground Truth)}}"] * data.shape[0])
+                plot_labels.extend([rf"\textbf{{{modality}}} \textbf{{(Reconstructed)}}"] * data.shape[0])
                 modalities.extend([modality] * data.shape[0] * 2)
                 if labels_data and modality in labels_data:
                     annotation_labels.extend(labels_data[modality][:, 0])
@@ -855,14 +867,18 @@ def _compute_tsne(
         # Extend palette for reconstructions
         extended_palette = {}
         for modality, color in MODALITY_COLOURS.items():
-            extended_palette[f"{modality} (Ground Truth)"] = color
-            extended_palette[f"{modality} (Reconstructed)"] = generate_alternative_hex(color)
-        print(f"Extended palette: {extended_palette}")
+            extended_palette[rf"\textbf{{{modality}}} \textbf{{(Ground Truth)}}"] = color
+            extended_palette[rf"\textbf{{{modality}}} \textbf{{(Reconstructed)}}"] = generate_alternative_hex(color)
 
-        n_legend_cols = len(embeddings)
+        n_legend_cols = len(embeddings) + 1
 
         # Create Plot
-        plt.figure(figsize=figsize)
+        fig, ax = plt.subplots(figsize=figsize)
+        ax.patch.set_edgecolor("black")
+
+        ax.patch.set_linewidth(1)
+        ax.grid(True, linestyle="--", alpha=0.6)
+
         sns.scatterplot(
             x="TSNE-1",
             y="TSNE-2",
@@ -872,7 +888,10 @@ def _compute_tsne(
             style="Modality",
             markers=True,
             s=marker_scale,
+            edgecolor="black",
+            ax=ax,
         )
+        ax.grid(True, linestyle="--", alpha=0.6)
 
         # Remove axis labels since T-SNE scale is arbitrary
         plt.xlabel("")
@@ -882,12 +901,18 @@ def _compute_tsne(
 
         title = title_mapping_fn(title) if title_mapping_fn else title
 
-        plt.title(title, fontsize=f_sizes.get("title", 16))
-        plt.legend(
-            bbox_to_anchor=(0.5, -0.125), loc="lower center", fontsize=f_sizes.get("legend", 12), ncols=n_legend_cols
+        plt.title(rf"\textbf{{{title}}}", fontsize=f_sizes.get("title", 16))
+
+        lgnd = plt.legend(
+            bbox_to_anchor=(0.5, -0.13),
+            loc="lower center",
+            fontsize=f_sizes.get("legend", 14),
+            ncols=n_legend_cols,
+            markerscale=2,
         )
+
         plt.tight_layout()  # Adjust the layout
-        plt.subplots_adjust(bottom=0.3)
+        plt.subplots_adjust(bottom=-0.0)
         # Save the plot if output_root is provided
         contains_reconstructions = any(data.ndim == 3 for data in embeddings.values())
         if output_root:
@@ -895,6 +920,7 @@ def _compute_tsne(
             os.makedirs(f"{output_root}/plots", exist_ok=True)
             plt.savefig(f"{output_root}/plots/{f_name_no_ext}.png", dpi=300, bbox_inches="tight")
             plt.savefig(f"{output_root}/plots/{f_name_no_ext}.pdf", dpi=300, bbox_inches="tight")
+        ax.grid(True, linestyle="--", alpha=0.6)
 
         # Show the plot if required
         if show:
