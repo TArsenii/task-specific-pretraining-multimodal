@@ -46,6 +46,7 @@ class TrainingConfig(BaseConfig):
     early_stopping: bool = False
     early_stopping_patience: int = 10
     early_stopping_min_delta: float = 0.001
+    encoder_optimizer: Optional[OptimizerConfig] = None
 
     def __post_init__(self):
         """Validate training configuration."""
@@ -103,6 +104,11 @@ class TrainingConfig(BaseConfig):
             table.add_row("Early Stopping", "Enabled")
             table.add_row("Patience", str(self.early_stopping_patience))
             table.add_row("Min Delta", str(self.early_stopping_min_delta))
+            
+        # Добавляем информацию о раздельном оптимизаторе для энкодеров, если он задан
+        if self.encoder_optimizer:
+            table.add_row("Separate Encoder Optimizer", "Enabled")
+            table.add_row("Encoder Learning Rate", str(self.encoder_optimizer.default_kwargs.get("lr", "Unknown")))
 
         console.print(table)
 

@@ -42,9 +42,9 @@ def resolve_model_name(_type: str) -> Type[MultimodalModelProtocol]:
 
             return Transformer
         case "mmimdb":
-            from models.mmimdb import GMUModel
+            from models.mmimdb import MMIMDb
 
-            return GMUModel
+            return MMIMDb
         case "mmimdbmodalityencoder":
             from models.mmimdb import MMIMDbModalityEncoder
 
@@ -91,13 +91,31 @@ def resolve_init_fn(_type: str) -> Type[Callable]:
 
 
 def resolve_encoder(_type: str):
-    from models.msa.networks import LSTMEncoder, TextCNN
+    from models.msa.networks import LSTMEncoder, TextCNN, ResNet18, ResNet34, ResNet50, ResNetEncoder
+    from models.msa.networks.fc import FcEncoder
+    from models.msa.networks.lenet import LeNet5, LeNet5Enhanced, LeNetEncoder
 
     match _type.lower():
         case "lstmencoder":
             return LSTMEncoder
         case "textcnn":
             return TextCNN
+        case "resnet18":
+            return ResNet18
+        case "resnet34":
+            return ResNet34
+        case "resnet50":
+            return ResNet50
+        case "resnetencoder":
+            return ResNetEncoder
+        case "fcencoder":
+            return FcEncoder
+        case "lenet5":
+            return LeNet5
+        case "lenet5enhanced":
+            return LeNet5Enhanced
+        case "lenetencoder":
+            return LeNetEncoder
         # case "mmimdbmodalityencoder":
         #     return MMIMDbModalityEncoder
         case _:

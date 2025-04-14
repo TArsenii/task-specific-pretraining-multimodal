@@ -32,6 +32,7 @@ from experiment_utils.utils import (
     flatten_dict,
     gpu_memory,
     prepare_metrics_for_json,
+    format_path_with_env,
 )
 from modalities import add_modality
 from models.protocols import MultimodalModelProtocol
@@ -151,6 +152,57 @@ def setup_model_components(
         init_fn(model)
         console.print(f"[green]✓[/] Initialized model with {config.model.init_fn}")
 
+    # Загрузка предобученных весов энкодеров, если они указаны в конфигурации
+    if hasattr(config.model, "pretrained_encoders") and config.model.pretrained_encoders:
+        console.print("[yellow]Loading pretrained encoders[/]")
+        for modality, encoder_path in config.model.pretrained_encoders.items():
+            # Обрабатываем переменные окружения в пути
+            encoder_path_str = format_path_with_env(encoder_path)
+            encoder_path = Path(encoder_path_str)
+            if encoder_path.exists():
+                try:
+                    # Получаем энкодер из модели в зависимости от модальности
+                    if modality.lower() == "image":
+                        encoder = model.netI if hasattr(model, "netI") else (
+                            model.image_model if hasattr(model, "image_model") else model.image_encoder
+                        )
+                    elif modality.lower() == "text":
+                        encoder = model.netT if hasattr(model, "netT") else (
+                            model.text_model if hasattr(model, "text_model") else model.text_encoder
+                        )
+                    elif modality.lower() == "audio":
+                        encoder = model.netA if hasattr(model, "netA") else (
+                            model.audio_model if hasattr(model, "audio_model") else model.audio_encoder
+                        )
+                    elif modality.lower() == "video":
+                        encoder = model.netV if hasattr(model, "netV") else (
+                            model.video_model if hasattr(model, "video_model") else model.video_encoder
+                        )
+                    else:
+                        console.print(f"[red]Unknown modality: {modality}[/]")
+                        continue
+                    
+                    # Загружаем веса
+                    state_dict = torch.load(encoder_path, map_location=config.experiment.device)
+                    encoder.load_state_dict(state_dict)
+                    console.print(f"[green]✓[/] Loaded pretrained {modality} encoder from {encoder_path}")
+                except Exception as e:
+                    console.print(f"[red]Error loading encoder {modality}: {str(e)}[/]")
+            else:
+                console.print(f"[red]Encoder path not found: {encoder_path}")
+                # Попробуем наиболее распространенный путь
+                try:
+                    actual_path = Path(f"experiments_output/MMIMDb_{modality.title()}_Encoder_Pretrain/models/1/encoder_{modality.lower()}_best.pth")
+                    if actual_path.exists():
+                        encoder = getattr(model, f"{modality.lower()}_model")
+                        state_dict = torch.load(actual_path, map_location=config.experiment.device)
+                        encoder.load_state_dict(state_dict)
+                        console.print(f"[green]✓[/] Loaded pretrained {modality} encoder from {actual_path}")
+                    else:
+                        console.print(f"[red]Alternative encoder path not found: {actual_path}")
+                except Exception as e:
+                    console.print(f"[red]Error loading alternative encoder path: {str(e)}")
+
     console.print("[green]✓[/] Model created successfully")
     console.print(
         Panel(str(model), box=box.SQUARE, highlight=True, expand=True, title="[heading]Model Architecture[/]")
@@ -160,7 +212,101 @@ def setup_model_components(
     device = config.experiment.device
     model.to(device)
 
-    optimizer = config.get_optimizer(model)
+    # Создаем оптимизатор с различными скоростями обучения для энкодеров и остальных частей модели
+    if hasattr(config.training, "encoder_optimizer") and config.model.pretrained_encoders:
+        # Параметры энкодеров с меньшей скоростью обучения
+        encoder_params = []
+        if hasattr(model, "image_model"):
+            encoder_params.extend(model.image_model.parameters())
+        if hasattr(model, "text_model"):
+            encoder_params.extend(model.text_model.parameters())
+        if hasattr(model, "audio_model"):
+            encoder_params.extend(model.audio_model.parameters())
+        if hasattr(model, "video_model"):
+            encoder_params.extend(model.video_model.parameters())
+        
+        # Параметры остальных частей модели
+        other_params = [p for p in model.parameters() if not any(p is ep for ep in encoder_params)]
+        
+        # Create a copy of parameter settings to avoid changing the original configuration
+        encoder_kwargs = dict(config.training.encoder_optimizer.default_kwargs)
+        base_kwargs = dict(config.training.optimizer.default_kwargs)
+        
+        # Type checking and conversion if needed
+        if 'lr' in encoder_kwargs and not isinstance(encoder_kwargs['lr'], float):
+            console.print(f"[yellow]Warning: encoder lr is not float, converting from {type(encoder_kwargs['lr'])} to float[/]")
+            encoder_kwargs['lr'] = float(encoder_kwargs['lr'])
+        
+        if 'lr' in base_kwargs and not isinstance(base_kwargs['lr'], float):
+            console.print(f"[yellow]Warning: base lr is not float, converting from {type(base_kwargs['lr'])} to float[/]")
+            base_kwargs['lr'] = float(base_kwargs['lr'])
+        
+        # Prepare specific optimizers for individual encoders
+        audio_params = []
+        video_params = []
+        text_params = []
+        
+        # Separate parameters for each encoder if they exist in the model
+        if hasattr(model, "netA") or hasattr(model, "audio_model"):
+            audio_params = list(model.netA.parameters() if hasattr(model, "netA") else model.audio_model.parameters())
+            
+        if hasattr(model, "netV") or hasattr(model, "video_model"):
+            video_params = list(model.netV.parameters() if hasattr(model, "netV") else model.video_model.parameters())
+            
+        if hasattr(model, "netT") or hasattr(model, "text_model"):
+            text_params = list(model.netT.parameters() if hasattr(model, "netT") else model.text_model.parameters())
+        
+        # Form parameter groups based on the availability of specific optimizers
+        param_groups = []
+        
+        # Specific optimizer for audio encoder
+        if hasattr(config.training, "audio_optimizer") and audio_params:
+            audio_kwargs = dict(config.training.audio_optimizer.default_kwargs)
+            if 'lr' in audio_kwargs and not isinstance(audio_kwargs['lr'], float):
+                audio_kwargs['lr'] = float(audio_kwargs['lr'])
+                
+            console.print(f"[green]Using specific audio optimizer with lr={audio_kwargs['lr']}[/]")
+            param_groups.append({"params": audio_params, **audio_kwargs})
+            # Remove audio parameters from general encoder parameters
+            encoder_params = [p for p in encoder_params if not any(p is ap for ap in audio_params)]
+            
+        # Specific optimizer for video encoder
+        if hasattr(config.training, "video_optimizer") and video_params:
+            video_kwargs = dict(config.training.video_optimizer.default_kwargs)
+            if 'lr' in video_kwargs and not isinstance(video_kwargs['lr'], float):
+                video_kwargs['lr'] = float(video_kwargs['lr'])
+                
+            console.print(f"[green]Using specific video optimizer with lr={video_kwargs['lr']}[/]")
+            param_groups.append({"params": video_params, **video_kwargs})
+            # Remove video parameters from general encoder parameters
+            encoder_params = [p for p in encoder_params if not any(p is vp for vp in video_params)]
+            
+        # Specific optimizer for text encoder
+        if hasattr(config.training, "text_optimizer") and text_params:
+            text_kwargs = dict(config.training.text_optimizer.default_kwargs)
+            if 'lr' in text_kwargs and not isinstance(text_kwargs['lr'], float):
+                text_kwargs['lr'] = float(text_kwargs['lr'])
+                
+            console.print(f"[green]Using specific text optimizer with lr={text_kwargs['lr']}[/]")
+            param_groups.append({"params": text_params, **text_kwargs})
+            # Remove text parameters from general encoder parameters
+            encoder_params = [p for p in encoder_params if not any(p is tp for tp in text_params)]
+        
+        # Add remaining encoder parameters (if any)
+        if encoder_params:
+            param_groups.append({"params": encoder_params, **encoder_kwargs})
+            
+        # Add all other model parameters
+        param_groups.append({"params": other_params, **base_kwargs})
+        
+        # Create optimizer with parameter groups
+        OptClass = getattr(torch.optim, config.training.optimizer.name)
+        optimizer = OptClass(param_groups)
+        console.print("[green]✓[/] Created optimizer with different learning rates for components")
+    else:
+        # Стандартный оптимизатор для всей модели
+        optimizer = config.get_optimizer(model)
+    
     criterion = config.training.loss_functions
     console.print("[green]✓[/] Optimizer and criterion created")
     logger.info(f"Optimizer and criterion created\n{optimizer}\n{criterion}")
@@ -441,13 +587,23 @@ def _train_loop(
     best_metrics = None
     wait = 0
     console.start_task("Epoch", total=config.training.epochs)
+    
+    # Инициализируем список для хранения метрик по эпохам
+    epoch_metrics = []
+    metrics_file = Path(config.logging.metrics_path) / "epoch_metrics.json"
+    
+    def _save_metrics_json():
+        """Сохраняет текущие метрики по эпохам в JSON-файл"""
+        with open(metrics_file, 'w') as f:
+            json.dump(epoch_metrics, f, indent=4)
+        console.print(f"[green]✓[/] Сохранены метрики в: {metrics_file}")
 
     for epoch in range(1, config.training.epochs + 1):
         if monitor:
             monitor.start_epoch(epoch)
 
         metric_recorder.reset()
-        train_loss, train_time, train_loss_info = train_epoch(
+        train_loss, train_timing, train_loss_info = train_epoch(
             model=model,
             train_loader=dataloaders["train"],
             optimizer=optimizer,
@@ -461,11 +617,11 @@ def _train_loop(
         train_metrics = flatten_dict(train_metrics)
         train_metrics["loss"] = train_loss
         experiment_data["metrics_history"]["train"].append(train_metrics.copy())
-        experiment_data["timing_history"]["train"].append(train_time)
+        experiment_data["timing_history"]["train"].append(train_timing)
         console.display_validation_metrics(train_metrics)
 
         metric_recorder.reset()
-        val_loss, val_time, val_loss_info = validate_epoch(
+        val_loss, val_timing, val_loss_info = validate_epoch(
             model=model,
             val_loader=dataloaders["validation"],
             loss_functions=loss_functions,
@@ -479,8 +635,108 @@ def _train_loop(
         val_metrics = flatten_dict(val_metrics)
         val_metrics["loss"] = val_loss
         experiment_data["metrics_history"]["validation"].append(val_metrics.copy())
-        experiment_data["timing_history"]["validation"].append(val_time)
+        experiment_data["timing_history"]["validation"].append(val_timing)
         console.display_validation_metrics(val_metrics)
+
+        # Сохраняем метрики в формате epoch_metrics.json
+        epoch_data = {
+            "epoch": epoch,
+            "train": {
+                "loss": train_loss,
+                "timing": {
+                    "total_time": train_timing,
+                    "avg_batch_time": train_timing / len(dataloaders["train"])
+                }
+            },
+            "validation": {
+                "loss": val_loss,
+                "timing": {
+                    "total_time": val_timing,
+                    "avg_batch_time": val_timing / len(dataloaders["validation"])
+                }
+            }
+        }
+        
+        # Добавляем все метрики для train
+        for key, value in train_metrics.items():
+            # Пропускаем специальные ключи, которые уже добавлены
+            if key == "loss" or not isinstance(value, (int, float)):
+                continue
+                
+            if (key.startswith('f1_') or key.startswith('MSA_')) and '_' in key:
+                parts = key.split('_')
+                if key.startswith('MSA_'):
+                    # Для MSA метрик формат: MSA_Non0_Accuracy_ATV
+                    if len(parts) >= 4:
+                        metric_name = parts[0] + '_' + parts[1] + '_' + parts[2]  # MSA_Non0_Accuracy
+                        modality = parts[3]  # ATV, A, T, V и т.д.
+                        if modality not in epoch_data["train"]:
+                            epoch_data["train"][modality] = {}
+                        epoch_data["train"][modality][metric_name] = train_metrics[key]
+                else:
+                    # Для f1 метрик формат: f1_samples_IT
+                    metric_name = parts[0] + '_' + parts[1]  # f1_samples, f1_macro и т.д.
+                    if len(parts) >= 3:
+                        modality = parts[2]  # IT, I, T
+                        if modality not in epoch_data["train"]:
+                            epoch_data["train"][modality] = {}
+                        epoch_data["train"][modality][metric_name] = train_metrics[key]
+                    else:
+                        if 'IT' not in epoch_data["train"]:
+                            epoch_data["train"]["IT"] = {}
+                        epoch_data["train"]["IT"][metric_name] = train_metrics[key]
+            else:
+                # Для всех остальных метрик
+                if "metrics" not in epoch_data["train"]:
+                    epoch_data["train"]["metrics"] = {}
+                epoch_data["train"]["metrics"][key] = value
+                    
+        # Добавляем все метрики для validation
+        for key, value in val_metrics.items():
+            # Пропускаем специальные ключи, которые уже добавлены
+            if key == "loss" or not isinstance(value, (int, float)):
+                continue
+                
+            if (key.startswith('f1_') or key.startswith('MSA_')) and '_' in key:
+                parts = key.split('_')
+                if key.startswith('MSA_'):
+                    # Для MSA метрик формат: MSA_Non0_Accuracy_ATV
+                    if len(parts) >= 4:
+                        metric_name = parts[0] + '_' + parts[1] + '_' + parts[2]  # MSA_Non0_Accuracy
+                        modality = parts[3]  # ATV, A, T, V и т.д.
+                        if modality not in epoch_data["validation"]:
+                            epoch_data["validation"][modality] = {}
+                        epoch_data["validation"][modality][metric_name] = val_metrics[key]
+                else:
+                    # Для f1 метрик формат: f1_samples_IT
+                    metric_name = parts[0] + '_' + parts[1]  # f1_samples, f1_macro и т.д.
+                    if len(parts) >= 3:
+                        modality = parts[2]  # IT, I, T
+                        if modality not in epoch_data["validation"]:
+                            epoch_data["validation"][modality] = {}
+                        epoch_data["validation"][modality][metric_name] = val_metrics[key]
+                    else:
+                        if 'IT' not in epoch_data["validation"]:
+                            epoch_data["validation"]["IT"] = {}
+                        epoch_data["validation"]["IT"][metric_name] = val_metrics[key]
+            else:
+                # Для всех остальных метрик
+                if "metrics" not in epoch_data["validation"]:
+                    epoch_data["validation"]["metrics"] = {}
+                epoch_data["validation"]["metrics"][key] = value
+        
+        epoch_metrics.append(epoch_data)
+        _save_metrics_json()
+        
+        # Сохраняем метрики в файл total.txt (оставляем существующую функцию)
+        # save_epoch_metrics(
+        #     epoch=epoch,
+        #     train_metrics=train_metrics,
+        #     val_metrics=val_metrics,
+        #     train_timing=train_timing,
+        #     val_timing=val_timing,
+        #     output_dir=Path(config.logging.log_path),
+        # )
 
         if metric_recorder.writer is not None:
             for loss_name in train_loss_info:
@@ -532,6 +788,74 @@ def _train_loop(
             monitor.end_epoch()
 
     console.complete_task("Epoch")
+
+    # Добавляем тестовые метрики, если есть
+    if "test" in dataloaders:
+        metric_recorder.reset()
+        console.print(f"\n[bold cyan]Testing on test split[/]")
+        
+        with torch.no_grad():
+            test_loss, test_timing, test_loss_info = validate_epoch(
+                model=model,
+                val_loader=dataloaders["test"],
+                loss_functions=loss_functions,
+                device=device,
+                console=console,
+                metric_recorder=metric_recorder,
+                monitor=monitor,
+                task_name="Testing test",
+            )
+            
+        test_metrics = metric_recorder.calculate_all_groups(loss=test_loss, skip_tensorboard=True)
+        test_metrics = flatten_dict(test_metrics)
+        test_metrics.update({k: np.mean(v) for k, v in test_loss_info.items()})
+        experiment_data["metrics_history"]["test"] = test_metrics
+        experiment_data["timing_history"]["test"] = [test_timing]
+        console.display_validation_metrics(test_metrics)
+        
+        # Добавляем тестовые метрики в JSON
+        test_data = {
+            "test": {
+                "loss": test_loss,
+                "timing": {
+                    "total_time": test_timing,
+                    "avg_batch_time": test_timing / len(dataloaders["test"])
+                }
+            }
+        }
+        
+        # Добавляем метрики классификации для test
+        for key, value in test_metrics.items():
+            # Пропускаем специальные ключи, которые уже добавлены
+            if key == "loss" or not isinstance(value, (int, float)):
+                continue
+                
+            if (key.startswith('f1_') or key.startswith('MSA_')) and '_' in key:
+                parts = key.split('_')
+                if key.startswith('MSA_'):
+                    # Для MSA метрик формат: MSA_Non0_Accuracy_ATV
+                    if len(parts) >= 4:
+                        metric_name = parts[0] + '_' + parts[1] + '_' + parts[2]  # MSA_Non0_Accuracy
+                        modality = parts[3]  # ATV, A, T, V и т.д.
+                        if modality not in test_data["test"]:
+                            test_data["test"][modality] = {}
+                        test_data["test"][modality][metric_name] = test_metrics[key]
+                else:
+                    # Для f1 метрик формат: f1_samples_IT
+                    metric_name = parts[0] + '_' + parts[1]  # f1_samples, f1_macro и т.д.
+                    if len(parts) >= 3:
+                        modality = parts[2]  # IT, I, T
+                        if modality not in test_data["test"]:
+                            test_data["test"][modality] = {}
+                        test_data["test"][modality][metric_name] = test_metrics[key]
+                    else:
+                        if 'IT' not in test_data["test"]:
+                            test_data["test"]["IT"] = {}
+                        test_data["test"]["IT"][metric_name] = test_metrics[key]
+                    
+        epoch_metrics.append(test_data)
+        _save_metrics_json()
+        
     return best_metrics
 
 

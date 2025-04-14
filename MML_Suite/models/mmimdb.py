@@ -1,5 +1,5 @@
 from collections import defaultdict
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import numpy as np
 import torch
@@ -9,6 +9,7 @@ from experiment_utils.metric_recorder import MetricRecorder
 from experiment_utils.utils import safe_detach
 from modalities import Modality
 from models.gates import GatedBiModalNetwork
+from models.pooling import MultimodalPooling
 from models.maxout import MaxOut
 from torch import Tensor
 from torch.nn import BatchNorm1d, Dropout, Linear, Module, Sequential
@@ -91,9 +92,9 @@ class MMIMDbModalityEncoder(Module):
         return self.net(x)
 
 
-class GMUModel(Module):
+class MMIMDb(Module):
     """
-    Gated Multimodal Unit (GMU)-based model for multimodal learning on MMIMDb dataset.
+    Multimodal model for the MMIMDb dataset.
     Combines image and text modalities for genre classification.
     """
 
@@ -101,31 +102,56 @@ class GMUModel(Module):
         self,
         image_encoder: MMIMDbModalityEncoder,
         text_encoder: MMIMDbModalityEncoder,
-        gated_bimodal_network: GatedBiModalNetwork,
-        classifier: MLPGenreClassifier,
+        gated_bimodal_network: Optional[GatedBiModalNetwork] = None,
+        multimodal_pooling: Optional[Dict[str, Any]] = None,
+        classifier: MLPGenreClassifier = None,
         binary_threshold: float = 0.5,
     ) -> None:
         """
-        Initialize the GMUModel.
+        Initialize the MMIMDb model.
 
         Args:
             image_encoder (MMIMDbModalityEncoder): Encoder for the image modality.
             text_encoder (MMIMDbModalityEncoder): Encoder for the text modality.
-            gated_bimodal_network (GatedBiModalNetwork): GMU for fusing modalities.
+            gated_bimodal_network (Optional[GatedBiModalNetwork]): GMU for fusing modalities.
+            multimodal_pooling (Optional[Dict[str, Any]]): Configuration for multimodal pooling.
+                If provided, this will be used instead of gated_bimodal_network.
+                Expected keys: 'pooling_type', 'hidden_dim', 'dropout'
             classifier (MLPGenreClassifier): MLP classifier for final predictions.
             binary_threshold (float): Threshold for binary classification.
         """
         super().__init__()
         self.image_model = image_encoder
         self.text_model = text_encoder
-        self.gmu = gated_bimodal_network
+        
+        # Configure the fusion module
+        if multimodal_pooling is not None:
+            pooling_type = multimodal_pooling.get('pooling_type', 'gated')
+            hidden_dim = multimodal_pooling.get('hidden_dim', None)
+            dropout = multimodal_pooling.get('dropout', 0.0)
+            
+            self.fusion_module = MultimodalPooling(
+                input_dim_a=image_encoder.net[-1].out_features,
+                input_dim_b=text_encoder.net[-1].out_features,
+                output_dim=classifier.input_size,
+                pooling_type=pooling_type,
+                hidden_dim=hidden_dim,
+                dropout=dropout
+            )
+            self.fusion_type = 'pooling'
+        elif gated_bimodal_network is not None:
+            self.fusion_module = gated_bimodal_network
+            self.fusion_type = 'gated'
+        else:
+            raise ValueError("Either gated_bimodal_network or multimodal_pooling must be provided")
+        
         self.mm_mlp = classifier
         self.binary_threshold = binary_threshold
+        self.monitor = None
 
     def logits_transform(self, logits: Tensor) -> Tensor:
         predictions = torch.nn.functional.sigmoid(logits).detach().cpu().numpy()
-        predictions = (predictions > 0.5).astype(int)
-
+        predictions = (predictions > self.binary_threshold).astype(int)
         return predictions
 
     def get_encoder(self, modality: Modality) -> MMIMDbModalityEncoder:
@@ -163,7 +189,12 @@ class GMUModel(Module):
         image = self.image_model(I) if not is_embd_I else I
         text = self.text_model(T) if not is_embd_T else T
 
-        z = self.gmu(image, text)
+        # Fusion mechanism
+        if self.fusion_type == 'pooling':
+            z = self.fusion_module(image, text)
+        else:  # gated
+            z = self.fusion_module(image, text)
+            
         logits = self.mm_mlp(z)
 
         return logits
@@ -263,7 +294,7 @@ class GMUModel(Module):
         Returns:
             str: Model components as a string.
         """
-        return f"{self.image_model}\n{self.text_model}\n{self.gmu}\n{self.mm_mlp}"
+        return f"{self.image_model}\n{self.text_model}\n{self.fusion_module}\n{self.mm_mlp}"
 
     def get_embeddings(self, dataloader: DataLoader, device: torch.device) -> Dict[Modality, np.ndarray]:
         """

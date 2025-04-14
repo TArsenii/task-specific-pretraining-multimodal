@@ -15,16 +15,20 @@ from modalities import add_modality
 from models.avmnist import MNISTAudio, MNISTImage
 from models.conv import ConvBlock, ConvBlockArgs
 from models.maxout import MaxOut
-from models.mmimdb import GMUModel, MLPGenreClassifier, MMIMDbModalityEncoder, GatedBiModalNetwork
+from models.mmimdb import MMIMDb, MLPGenreClassifier, MMIMDbModalityEncoder, GatedBiModalNetwork
 from models.msa.networks.autoencoder import ResidualAE, ResidualXE
 from models.msa.networks.bert_text_encoder import BertTextEncoder
 from models.msa.networks.classifier import FcClassifier
 from models.msa.networks.lstm import LSTMEncoder
+from models.msa.networks.fc import FcEncoder
+from models.msa.networks.resnet import ResNet18, ResNet34, ResNet50, ResNetEncoder
 from models.msa.networks.textcnn import TextCNN
 from models.msa.self_mm import AuViSubNet, Self_MM
 from models.msa.utt_fusion import UttFusionModel
 from models.msa.networks.transformer import Transformer
 from models.cmams import AssociationNetwork, InputEncoders
+from models.pooling import MultimodalPooling
+from models.msa.networks.lenet import LeNet5, LeNet5Enhanced, LeNetEncoder
 
 logger = get_logger()
 
@@ -134,16 +138,9 @@ register_constructor(
     GatedBiModalNetwork,
     deep=True,
 )
-register_constructor(
-    "!GMUModel",
-    GMUModel,
-    deep=True,
-)
-register_constructor(
-    "!MLPGenreClassifier",
-    MLPGenreClassifier,
-    deep=True,
-)
+register_constructor("!MMIMDb", MMIMDb, deep=True)
+register_constructor("!MLPGenreClassifier", MLPGenreClassifier, deep=True)
+register_constructor("!MultimodalPooling", MultimodalPooling, deep=True)
 register_constructor("!KineticsSoundsAudioEncoder", cls=KineticsSoundsAudioEncoder, deep=True)
 register_constructor("!KineticsSoundsVideoEncoder", cls=KineticsSoundsVideoEncoder, deep=True)
 
@@ -158,6 +155,49 @@ register_constructor("!LabelManager", LabelManager, deep=True)
 register_constructor("!BertTextEncoder", BertTextEncoder)
 register_constructor("!MissingPatternConfig", MissingPatternConfig)
 register_constructor("!ModalityConfig", ModalityConfig)
+
+register_constructor(
+    "!ResNet18",
+    ResNet18,
+    deep=True,
+)
+register_constructor(
+    "!ResNet34",
+    ResNet34,
+    deep=True,
+)
+register_constructor(
+    "!ResNet50",
+    ResNet50,
+    deep=True,
+)
+register_constructor(
+    "!ResNetEncoder",
+    ResNetEncoder,
+    deep=True,
+)
+
+register_constructor(
+    "!FcEncoder",
+    FcEncoder,
+    deep=True,
+)
+
+register_constructor(
+    "!LeNet5",
+    LeNet5,
+    deep=True,
+)
+register_constructor(
+    "!LeNet5Enhanced",
+    LeNet5Enhanced,
+    deep=True,
+)
+register_constructor(
+    "!LeNetEncoder",
+    LeNetEncoder,
+    deep=True,
+)
 
 # register_constructor("!AssociationNetworkConfig", AssociationNetworkConfig)
 # register_constructor("!InputEncoders", InputEncoders)

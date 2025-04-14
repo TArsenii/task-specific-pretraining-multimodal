@@ -55,7 +55,11 @@ training:
     default_kwargs:
       lr: 1e-3
       weight_decay: 0.001
-  criterion: "cross_entropy"
+  loss_functions: !LossFunctionGroup
+    cross_entropy: 
+      loss_name: "cross_entropy"
+      loss_args: {}
+      weight: 1.0
 
 data: !DataConfig
   datasets:
@@ -67,13 +71,13 @@ data: !DataConfig
       shuffle: true
       missing_patterns: !MissingPatternConfig
         modalities:
-          audio: !ModalityConfig
+          !Modality AUDIO: !ModalityConfig
             missing_rate: 0.0  # Audio is ALWAYS present when included in pattern
-          video: !ModalityConfig
+          !Modality VIDEO: !ModalityConfig
             missing_rate: 0.0  # Video is ALWAYS present when included in pattern
-          text: !ModalityConfig 
+          !Modality TEXT: !ModalityConfig 
             missing_rate: 0.0  # Text is ALWAYS present when included in pattern
-        selected_patterns: ["avt"]  # Only use these combinations of modalities
+        selected_patterns: ["atv"]  # Only use these combinations of modalities
       kwargs:
         labels_key: "classification_labels"
         aligned: true
@@ -86,13 +90,13 @@ data: !DataConfig
       target_modality: !Modality "MULTIMODAL"
       missing_patterns: !MissingPatternConfig
         modalities:
-          audio: !ModalityConfig
+          !Modality AUDIO: !ModalityConfig
             missing_rate: 0.0  # Audio is ALWAYS present when included in pattern
-          video: !ModalityConfig
+          !Modality VIDEO: !ModalityConfig
             missing_rate: 0.0  # Video is ALWAYS present when included in pattern
-          text: !ModalityConfig 
+          !Modality TEXT: !ModalityConfig 
             missing_rate: 0.0  # Text is ALWAYS present when included in pattern
-        selected_patterns: ["avt", "a", "v", "t", "av", "at", "vt"]
+        selected_patterns: ["atv", "a", "v", "t", "av", "at", "tv"]
       kwargs:
         aligned: true
         labels_key: "classification_labels"
@@ -105,13 +109,13 @@ data: !DataConfig
       shuffle: true
       missing_patterns: !MissingPatternConfig
         modalities:
-          audio: !ModalityConfig
+          !Modality AUDIO: !ModalityConfig
             missing_rate: 0.0  # Audio is ALWAYS present when included in pattern
-          video: !ModalityConfig
+          !Modality VIDEO: !ModalityConfig
             missing_rate: 0.0  # Video is ALWAYS present when included in pattern
-          text: !ModalityConfig 
+          !Modality TEXT: !ModalityConfig 
             missing_rate: 0.0  # Text is ALWAYS present when included in pattern
-        selected_patterns: ["avt", "a", "v", "t", "av", "at", "vt"]
+        selected_patterns: ["atv", "a", "v", "t", "av", "at", "tv"]
       kwargs:
         aligned: true
         labels_key: "classification_labels"
@@ -124,13 +128,13 @@ data: !DataConfig
       shuffle: true
       missing_patterns: !MissingPatternConfig
         modalities:
-          audio: !ModalityConfig
+          !Modality AUDIO: !ModalityConfig
             missing_rate: 0.0  # Audio is ALWAYS present when included in pattern
-          video: !ModalityConfig
+          !Modality VIDEO: !ModalityConfig
             missing_rate: 0.0  # Video is ALWAYS present when included in pattern
-          text: !ModalityConfig 
+          !Modality TEXT: !ModalityConfig 
             missing_rate: 0.0  # Text is ALWAYS present when included in pattern
-        selected_patterns: ["avt"]
+        selected_patterns: ["atv"]
       kwargs:
         aligned: true
         labels_key: "classification_labels"
@@ -146,6 +150,8 @@ metrics:
       kwargs: 
         labels: [0, 1, 2]
       level: "epoch"
+  groups:
+    classification: ["MSA", "ConfusionMatrix"]
 logging:
   log_path: "$EXP_PATH/experiments_output/{experiment_name}/logs/{run_id}"
   model_output_path: "$EXP_PATH/experiments_output/{experiment_name}/models/{run_id}"
@@ -168,4 +174,4 @@ monitoring:
   enable_activation_tracking: true
   enable_weight_tracking: true
   enable_layer_convergence: true
-  enable_information_flow: false
+  enable_information_flow: false 

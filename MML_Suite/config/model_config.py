@@ -26,6 +26,7 @@ class ModelConfig(BaseConfig):
     name: str
     model_type: str
     pretrained_path: Optional[str] = None
+    pretrained_encoders: Optional[Dict[str, str]] = None
     init_fn: Optional[Literal["xavier", "kaiming", "orthogonal"]] = None
     kwargs: Dict[str, Any] = field(default_factory=dict)
     version: str = field(default="1.0.0")
@@ -99,6 +100,11 @@ class ModelConfig(BaseConfig):
             "Pretrained Path",
             str(self.pretrained_path) if self.pretrained_path else "None",
         )
+        
+        # Добавление информации о предобученных энкодерах
+        if self.pretrained_encoders:
+            encoders_str = ", ".join([f"{k}: {v}" for k, v in self.pretrained_encoders.items()])
+            config_table.add_row("Pretrained Encoders", encoders_str)
 
         console.print(config_table)
 
@@ -121,6 +127,7 @@ class ModelConfig(BaseConfig):
             name = data.pop("name")
             model_type = data.pop("model_type")
             pretrained_path = data.pop("pretrained_path", None)
+            pretrained_encoders = data.pop("pretrained_encoders", None)
             init_fn = data.pop("init_fn", None)
             version = data.pop("version", "1.0.0")
 
@@ -131,6 +138,7 @@ class ModelConfig(BaseConfig):
                 name=name,
                 model_type=model_type,
                 pretrained_path=pretrained_path,
+                pretrained_encoders=pretrained_encoders,
                 init_fn=init_fn,
                 kwargs=kwargs,
                 version=version,
@@ -157,6 +165,9 @@ class ModelConfig(BaseConfig):
 
         if self.pretrained_path:
             base_dict["pretrained_path"] = self.pretrained_path
+        
+        if self.pretrained_encoders:
+            base_dict["pretrained_encoders"] = self.pretrained_encoders
 
         # Add all kwargs to the base dictionary
         base_dict.update(self.kwargs)
