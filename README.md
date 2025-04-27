@@ -2,11 +2,20 @@
 
 MML_Suite is a modular tool for multimodal machine learning research. It supports configurable experiments, federated learning, and the novel C-MAMs approach for handling missing modalities.
 
+> **Note:** This repository is a fork of the original [MML_Suite](https://github.com/jmg049/MML_Suite) project by Jack Geraghty (jmg049). This fork includes implementations and improvements for MMIMDB, AVMNIST, and MOSI datasets, as well as additional training scripts.
+
 ## Getting Starting
 The project manages dependencies through [Poetry](https://python-poetry.org/). To install all the dependencies, from the root directory, run ``poetry install`` or ``pip install .``.
 
 ## Running an Experimennt
-Once you have the configuration file setup, simply run:
+This fork provides two main training scripts:
+
+1. For pretraining individual modality encoders:
+```bash
+python train_monomodal.py --config ./path/to/config/file.yaml --run_id 1
+```
+
+2. For training multimodal models:
 ```bash
 python train_multimodal.py --config ./path/to/config/file.yaml --run_id 1
 ```
