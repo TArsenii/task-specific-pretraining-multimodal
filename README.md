@@ -168,7 +168,7 @@ training:
 - **Degree:** BSc (Hons) Computer Science
 - **Supervisor:** Professor Fatemeh Golpayegani
 - **Academic Year:** 2024-2025
-- **Report:** [20204701FYP.pdf](./20204701FYP.pdf) - 66-page comprehensive analysis
+- **Report:** [Final_Year_Project_Report.pdf](./Final_Year_Project_Report.pdf) - 66-page comprehensive analysis
 
 ## 📄 **Repository Structure**
 
