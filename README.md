@@ -1,233 +1,231 @@
-# MML_Suite
+# Task-Specific Pre-Training for Multimodal Models
 
-MML_Suite is a modular tool for multimodal machine learning research. It supports configurable experiments, federated learning, and the novel C-MAMs approach for handling missing modalities.
+## Investigating the Impact of Task-Specific Pre-Trained Encoders on Late-Fusion Multimodal Model Performance
 
-> **Note:** This repository is a fork of the original [MML_Suite](https://github.com/jmg049/MML_Suite) project by Jack Geraghty (jmg049). This fork includes implementations and improvements for MMIMDB, AVMNIST, and MOSI datasets, as well as additional training scripts.
+[![Academic Research](https://img.shields.io/badge/Type-Academic%20Research-blue.svg)](https://github.com/TArsenii/task-specific-pretraining-multimodal)
+[![UCD](https://img.shields.io/badge/Institution-University%20College%20Dublin-green.svg)](https://www.ucd.ie/)
+[![Final Year Project](https://img.shields.io/badge/Project-Final%20Year%20Project-orange.svg)](https://github.com/TArsenii/task-specific-pretraining-multimodal)
+[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-## Getting Starting
-The project manages dependencies through [Poetry](https://python-poetry.org/). To install all the dependencies, from the root directory, run ``poetry install`` or ``pip install .``.
+> **Research Question:** *"Does task-specific pre-training of encoders significantly improve late-fusion multimodal model performance compared to training from scratch?"*
 
-## Running an Experimennt
-This fork provides two main training scripts:
+## 🎯 **Project Overview**
 
-1. For pretraining individual modality encoders:
+This repository presents a comprehensive Final Year Project investigating the impact of task-specific pre-trained encoders on late-fusion multimodal model performance. The research extends the MML_Suite framework to conduct systematic experiments across three diverse datasets, providing insights into optimal multimodal learning strategies.
+
+### **Key Research Contributions:**
+- **Original Research Question** - systematic comparison of pre-training vs training from scratch
+- **Multi-Dataset Validation** - AVMNIST, MMIMDB, and MOSI datasets
+- **Comprehensive Analysis** - 66-page academic report with statistical significance testing
+- **Practical Guidelines** - decision framework for when to use pre-trained encoders
+- **Framework Extension** - significant contributions to open-source MML_Suite
+
+## 🔬 **Experimental Results**
+
+### **AVMNIST Dataset (Audio-Visual Digit Classification):**
+- **11.1% accuracy improvement** with pre-trained encoders (0.9515 vs 0.8567)
+- **46.6% loss reduction** in first epoch (0.2706 vs 0.5070)
+- **75% faster convergence** - 2 epochs vs 8 epochs to reach 99% accuracy
+- **Computational trade-off analysis** - 128.3% higher total cost but 20.1% faster main training
+
+### **MMIMDB Dataset (Movie Genre Classification):**
+- **F1_samples improvement:** IT: 0.5632→0.5878, T: 0.4443→0.4967
+- **Training time optimization:** 2426s → 1698s main training phase
+- **Modality-specific insights:** Text encoders benefit more from pre-training than image encoders
+- **Missing modality robustness:** Comprehensive evaluation across different modality combinations
+
+### **MOSI Dataset (Multimodal Sentiment Analysis):**
+- **Trimodal implementation:** Audio + Video + Text sentiment analysis
+- **Sequential data handling:** Variable-length sequence support
+- **Dual-task capability:** Both classification and regression approaches
+- **7 modality patterns:** Complete missing modality scenario evaluation
+
+## 🚀 **Technical Implementation**
+
+### **Extended MML_Suite Framework:**
+This project significantly extends the original [MML_Suite](https://github.com/jmg049/MML_Suite) by Jack Geraghty with:
+
+- **Novel Dataset Implementations:** MMIMDB and MOSI integration
+- **Temporal Modeling:** Sequence-based multimodal learning support
+- **Robust Evaluation Pipeline:** Missing modality scenario handling
+- **Comprehensive Monitoring:** Training dynamics and convergence analysis
+- **Pre-Training Pipeline:** Task-specific encoder initialization
+
+### **Architecture Innovations:**
+- **Modality-Specific Encoders:** ResNet18 (audio) + ResNet34 (image) optimization
+- **Late-Fusion Strategy:** Systematic comparison of fusion approaches
+- **Pre-Training Pipeline:** Individual modality encoder pre-training
+- **Statistical Analysis:** Significance testing and confidence intervals
+
+## 📊 **Key Findings**
+
+### **When to Use Pre-Trained Encoders:**
+✅ **High-performance requirements** - 11.1% accuracy improvement  
+✅ **Shared encoder scenarios** - amortize pre-training cost  
+✅ **Fast adaptation needs** - 75% faster convergence  
+✅ **Text-heavy multimodal tasks** - stronger benefits for text encoders  
+
+### **When Training from Scratch May Be Better:**
+❌ **Severely constrained computational budgets** - 128.3% higher total cost  
+❌ **Simple tasks** - diminishing returns from pre-training  
+❌ **Highly domain-specific data** - pre-training may not transfer well  
+
+## 🛠 **Getting Started**
+
+### **Installation:**
 ```bash
-python train_monomodal.py --config ./path/to/config/file.yaml --run_id 1
+# Clone the repository
+git clone https://github.com/TArsenii/task-specific-pretraining-multimodal.git
+cd task-specific-pretraining-multimodal
+
+# Install dependencies
+cd MML_Suite
+poetry install
+# or
+pip install .
 ```
 
-2. For training multimodal models:
+### **Running Experiments:**
+
+#### **Pre-train Individual Encoders:**
 ```bash
-python train_multimodal.py --config ./path/to/config/file.yaml --run_id 1
+python train_monomodal.py --config ./configs/avmnist_pretrain.yaml --run_id 1
 ```
 
-Additional CLI args:
-- ``--skip-train`` - Skips the training phase.
-- ``--skip-test`` - Skips the testing phase.
-- ``--dry-run`` - Performs a dry run and stops just before training.
-- ``--disable-monitoring`` - Force monitoring (of gradients etc.) off. Overrides the config file.
+#### **Train Multimodal Model:**
+```bash
+python train_multimodal.py --config ./configs/avmnist_multimodal.yaml --run_id 1
+```
 
+#### **Additional CLI Arguments:**
+- `--skip-train` - Skips the training phase
+- `--skip-test` - Skips the testing phase
+- `--dry-run` - Performs a dry run and stops just before training
+- `--disable-monitoring` - Force monitoring off, overrides config file
 
-# Configuration
+## ⚙️ **Configuration System**
 
-The project uses a hierarchical YAML-based configuration system with several specialized configuration classes to manage different aspects of the experiment pipeline. The configuration system is designed to be modular, extensible, and relatively type-safe.
+The project uses a hierarchical YAML-based configuration system designed for reproducible multimodal experiments:
 
+### **Configuration Structure:**
+- `experiment`: General experiment settings (device, seed, debug mode)
+- `data`: Dataset and dataloader configuration with missing pattern support
+- `model`: Model architecture and pre-trained path specifications
+- `logging`: Comprehensive logging paths and settings
+- `metrics`: Evaluation metrics with batch/epoch level tracking
+- `training`: Optimizer, scheduler, and early stopping configuration
+- `monitoring`: Gradient, activation, and weight tracking settings
 
-## Configuration Structure
-
-A complete experiment configuration consists of the following main components:
-
-- `experiment`: General experiment settings
-- `data`: Dataset and dataloader configuration
-- `model`: Model architecture and parameters
-- `logging`: Logging paths and settings
-- `metrics`: Evaluation metrics
-- `training`: Training parameters
-- `monitoring`: Experiment monitoring settings
-
-## Creating a Configuration
-
-Create a YAML file with the following structure:
-
+### **Example Configuration:**
 ```yaml
 experiment:
-  name: "experiment_name"
-  device: "cuda"  # or "cpu"
-  seed: 42  # optional
-  debug: false
-  do_test: true
-  do_train: true
-  train_print_interval_epochs: 1
-  validation_print_interval_epochs: 1
+  name: "avmnist_pretrained"
+  device: "cuda"
+  seed: 42
 
 data:
   datasets:
     train:
-      dataset: "dataset_name"
-      data_fp: "${DATA_DIR}/path/to/data"
-      target_modality: "target_mod"
-      split: "train"
+      dataset: "avmnist"
       batch_size: 32
-      shuffle: true
-      num_workers: 4
-      missing_patterns:  # optional
+      missing_patterns:
         modalities:
-          modality1:
+          audio:
             missing_rate: 0.2
-          modality2:
-            missing_rate: 0.3
-        selected_patterns: ["m1", "m2"]
+          image:
+            missing_rate: 0.1
 
 model:
-  name: "model_name"
-  model_type: "model.path.ModelClass"
-  pretrained_path: null  # optional
-  # model-specific parameters
-
-logging:
-  log_path: "${LOG_DIR}/experiments/{experiment_name}/{run_id}"
-  metrics_path: "${LOG_DIR}/metrics/{experiment_name}/{run_id}"
-  model_output_path: "${MODEL_DIR}/{experiment_name}/{run_id}"
-  monitor_path: "${LOG_DIR}/monitoring/{experiment_name}/{run_id}"
-
-metrics:
-  metrics:
-    accuracy:
-      function: "metrics.classification.accuracy"
-      level: "batch"  # or "epoch" or "both"
-    loss:
-      function: "metrics.losses.cross_entropy"
-      kwargs:
-        reduction: "mean"
-  groups:
-    classification:
-      - "accuracy"
-      - "loss"
+  name: "avmnist_late_fusion"
+  pretrained_path: "./weights/pretrained_encoders"
 
 training:
-  epochs: 100
-  num_modalities: 3
+  epochs: 50
   optimizer:
     name: "adam"
-    param_groups:
-      - name: "encoder"
-        pattern: ["encoder.*"]
-        lr: 0.001
-        weight_decay: 0.01
-    default_kwargs:
-      lr: 0.001
-      weight_decay: 0.0
-  scheduler:  # optional
-    name: "cosine"
-    args:
-      T_max: 100
-  criterion: "cross_entropy"
-  validation_interval: 1
+    lr: 0.001
   early_stopping: true
   early_stopping_patience: 10
-  early_stopping_min_delta: 0.001
-
-monitoring:
-  enabled: true
-  gradient_interval: 100
-  activation_interval: 100
-  weight_interval: 200
-  buffer_size: 1000
-  compression: "gzip"
 ```
 
-## Configuration Components
+## 📈 **Research Impact**
 
-### Experiment Config
-Controls high-level experiment settings:
-- `name`: Experiment identifier
-- `device`: Computing device (cuda/cpu)
-- `seed`: Random seed for reproducibility
-- `debug`: Enable debug mode
-- `do_test/do_train`: Control training and testing phases
+### **Theoretical Contributions:**
+- **Systematic pre-training analysis** across multiple multimodal domains
+- **Convergence rate optimization** through transfer learning
+- **Modality-specific pre-training benefits** quantification
+- **Computational cost-benefit analysis** for practical deployment
 
-### Data Config
-Manages dataset and dataloader configuration:
-- Supports multiple datasets (train/val/test)
-- Configurable batch size, shuffling, and workers
-- Missing pattern support for multimodal scenarios
-- Environment variable expansion in paths (e.g., `${DATA_DIR}`)
+### **Practical Applications:**
+- **Social Media Analysis** - text + image content understanding
+- **Medical Diagnostics** - patient records + medical imaging
+- **Autonomous Systems** - multi-sensor data fusion
+- **Sentiment Analysis** - audio + video + text integration
 
-### Model Config
-Defines model architecture and parameters:
-- Model type specification
-- Optional pretrained model loading
-- Flexible kwargs for model-specific parameters
+## 🎓 **Academic Context**
 
-### Logging Config
-Controls experiment logging:
-- Configurable paths for logs, metrics, and model outputs
-- Support for environment variables
-- Automatic directory creation and validation
+- **Institution:** University College Dublin (UCD)
+- **Degree:** BSc (Hons) Computer Science
+- **Supervisor:** Professor Fatemeh Golpayegani
+- **Academic Year:** 2024-2025
+- **Report:** [Final_Year_Project_Report.pdf](./Final_Year_Project_Report.pdf) - 66-page comprehensive analysis
 
-### Metrics Config
-Defines evaluation metrics:
-- Supports multiple metric functions
-- Configurable metric groups
-- Batch-level and epoch-level metrics
-- Custom metric parameters
+## 📄 **Repository Structure**
 
-### Training Config
-Manages training parameters:
-- Optimizer configuration with parameter groups
-- Learning rate scheduling
-- Loss criterion selection
-- Early stopping configuration
-- Validation intervals
-
-### Monitoring Config
-Controls experiment monitoring:
-- Gradient tracking
-- Activation monitoring
-- Weight tracking
-- Buffer settings for efficient storage
-
-## Usage
-
-Load a configuration using the `StandardMultimodalConfig` class:
-
-```python
-from config import StandardMultimodalConfig
-
-config = StandardMultimodalConfig.load("path/to/config.yaml", run_id=123)
+```
+├── MML_Suite/                 # Extended multimodal learning framework
+│   ├── models/               # Model implementations (AVMNIST, MMIMDB, MOSI)
+│   │   ├── avmnist.py       # Audio-visual digit classification
+│   │   ├── mmimdb.py        # Movie genre classification
+│   │   └── cmams.py         # Cross-modal association models
+│   ├── data/                # Dataset handling and preprocessing
+│   ├── configs/             # Experiment configurations
+│   ├── metrics/             # Evaluation metrics and analysis
+│   └── results_processing/  # Analysis and visualization tools
+├── 20204701FYP.pdf         # Complete 66-page academic report
+├── README.md               # This file
+├── LICENSE                 # MIT License
+└── pyproject.toml          # Poetry dependency management
 ```
 
-The configuration system will:
-1. Validate all components
-2. Create necessary directories
-3. Set up logging
-4. Initialize monitoring
-5. Prepare metrics tracking
+## 🔧 **Adding Custom Models/Datasets**
 
-## Environment Variables
+### **Models:**
+1. Implement required functions:
+   - `train_step(self, batch, optimizer, loss_functions, device, metric_recorder, **kwargs)`
+   - `validation_step(self, batch, loss_functions, device, metric_recorder, **kwargs)`
 
-The configuration system supports environment variable expansion in paths, for example:
-- `${DATA_DIR}`: Base directory for datasets
-- `${LOG_DIR}`: Directory for logs and metrics
-- `${MODEL_DIR}`: Directory for model checkpoints
+2. Add to [resolvers.py](./MML_Suite/config/resolvers.py) in `resolve_model_name` function
 
-Ensure these environment variables are set before running experiments.
+### **Datasets:**
+1. Implement as standard PyTorch dataset
+2. Add to [resolvers.py](./MML_Suite/config/resolvers.py) in `resolve_dataset_name` function
 
-## The General Procedure for Adding Custom Models/Datasets
-To add in a new model and/or dataset there are some general steps to follow. For models, the model should be (best practice) added to somewhere in the ``model`` directory. Note that to support C-MAMs there are a few more steps, see [C-MAMs](#cross-modal-association-models) and [Federated Learning](#federated-learning). 
+## 📚 **Citation**
 
-### Models
-Each model should implement the following functions:
+If you use this work in your research, please cite:
 
-- train_step(self, batch, optimizer, loss_functions: [LossFunctionGroup](./MML_Suite/experiment_utils/loss.py), device, metric_recorder: [MetricRecorder](./MML_Suite/experiment_utils/metric_recorder.py), **kwargs)
+```bibtex
+@thesis{troitskii2025taskspecific,
+  title={Investigating the Impact of Task-Specific Pre-Trained Encoders on Late-Fusion Multimodal Model Performance},
+  author={Troitskii, Arsenii},
+  year={2025},
+  school={University College Dublin},
+  type={Final Year Project},
+  supervisor={Golpayegani, Fatemeh}
+}
+```
 
-- validation_step(self, batch, loss_functions: [LossFunctionGroup](./MML_Suite/experiment_utils/loss.py), device, metric_recorder: [MetricRecorder](./MML_Suite/experiment_utils/metric_recorder.py), **kwargs)
+## 🤝 **Acknowledgments**
 
-After this, go to the [resolvers](./MML_Suite/config/resolvers.py) file and the ``resolve_model_name`` function. In the match statement add in the name of your model and return the class from the function. *Note this is how you add an unsupported loss function, optimizer, scheduler, etc.*
+- **Supervisor:** Professor Fatemeh Golpayegani (UCD School of Computer Science)
+- **Base Framework:** [MML_Suite](https://github.com/jmg049/MML_Suite) by Jack Geraghty (jmg049)
+- **Institution:** University College Dublin
 
-### Datasets
-To add a PyTorch dataset implement it as normal for PyTorch and then, like for adding a model, go to [resolvers](./MML_Suite/config/resolvers.py) and add your dataset to the match statement in ``resolve_dataset_name`` function.
+## 📜 **License**
 
-## Cross-Modal Association Models
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
+---
 
-## Federated Learning
+**Note:** This project represents independent research conducted as part of a Final Year Project at University College Dublin. The work extends the MML_Suite framework with novel experimental designs and comprehensive analysis across multiple multimodal learning domains, contributing both theoretical insights and practical guidelines for the multimodal machine learning community.
